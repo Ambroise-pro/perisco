@@ -1,0 +1,17 @@
+{
+  "name": "Racket EPS — tournois et classement Elo",
+  "short_name": "Racket EPS",
+  "description": "Tournois de sports de raquette en EPS : appel, terrains, scores, classement Elo. Fonctionne hors connexion ; les données restent sur l'appareil.",
+  "lang": "fr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1622",
+  "theme_color": "#0b1622",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

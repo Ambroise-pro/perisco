@@ -11,8 +11,51 @@ engine.js    moteur pur et testé (Elo, formats, terrains, persistance) — wind
 app.js       interface
 style.css    styles (repris du prototype V1)
 qr.js        générateur de QR codes (sans dépendance) — window.RacketQR
+qrdecode.js  lecteur de QR codes (sans dépendance) — window.RacketQRDecode
+sw.js        cache pour le fonctionnement hors connexion
+manifest.webmanifest, icons/   installation sur l'écran d'accueil
 tests/       tests du moteur et du générateur QR (node --test), parcours navigateur (Playwright)
 ```
+
+## Hors connexion et installation
+Le Wi-Fi des gymnases est souvent mauvais.
+- Une fois ouverte **par son adresse web** (Vercel), l'application garde une copie locale d'elle-même (`sw.js`) : elle se rouvre **sans réseau**, et les feuilles de match et de poule s'ouvrent aussi sur les tablettes élèves.
+- La règle est « réseau d'abord » : en ligne, on reçoit toujours la dernière version ; si le réseau est absent ou met plus de 3 s à répondre, c'est la copie locale qui sert.
+- Les données des élèves ne passent jamais par ce cache : elles restent dans le stockage du navigateur.
+- L'application est **installable** sur l'écran d'accueil (`manifest.webmanifest`, icônes dans `icons/`) : sur iPad, Partager → « Sur l'écran d'accueil » ; sur Android, menu → « Installer l'application ». Une fois installée, elle s'ouvre en plein écran et ses données sont mieux protégées (Safari peut effacer les données des sites non installés qu'on n'a pas ouverts depuis longtemps).
+- En ouverture locale (`file://`), le hors connexion ne s'applique pas.
+
+## Lecture des QR sur tous les appareils
+Le mode scan utilise le lecteur de QR intégré au navigateur quand il existe (Chrome sur Android, Chromebook, Mac). Sinon, notamment sur **iPad et Windows**, il utilise **`qrdecode.js`**, un lecteur écrit pour l'application, sans dépendance :
+- seuillage local de l'image, puis recherche des trois motifs de repérage (vérifiés en croix) ;
+- taille du code mesurée le long de ses vrais axes, puis correction de la perspective, avec le 4ᵉ coin calé sur le motif d'alignement ;
+- lecture des modules par vote sur 5 points ;
+- correction d'erreurs Reed-Solomon (Berlekamp-Massey, Chien, Forney) ;
+- plusieurs seuils et plusieurs triplets de motifs sont essayés si nécessaire.
+
+Il lit les QR produits par l'application (niveau de correction M, versions 1 à 20). Le reste ne lui est pas destiné.
+
+Mesures (`tests/qrdecode.test.js`, plus un balayage de 300 prises de vue simulées à angle quelconque, inclinaison jusqu'à 25 %, bruit, flou, modules de 3 à 8 px) :
+- 96 % de réussite par image pour les codes de résultat, 99 % pour les codes de poule et les feuilles de poule ;
+- environ 8 ms par image de 640 × 480 ;
+- les échecs restants combinent des modules minuscules (3–4 px) et un bruit fort. En pratique, la caméra fournit plusieurs images par seconde : il suffit d'approcher la tablette.
+
+Le parcours navigateur filme un vrai QR de poule avec une caméra simulée et vérifie que la poule s'enregistre toute seule.
+
+## Sauvegardes et transfert
+- **Rappel** : après chaque clôture, une pastille sur le bouton de sauvegarde (en haut) et un bandeau sur l'accueil indiquent le nombre de séances non sauvegardées. « Sauvegarder maintenant » télécharge le fichier ; « Partager… » ouvre le menu de partage de la tablette quand il existe (AirDrop, ENT, messagerie). Les classes exemples ne déclenchent pas de rappel.
+- **Export d'une seule classe** (Réglages), pour passer sur un autre appareil.
+- **Import par fusion** : les classes du fichier sont **ajoutées**. Pour une classe déjà présente, on choisit de la remplacer, de garder les deux ou de l'ignorer ; les autres classes ne sont jamais touchées. Une copie de secours est faite avant l'import.
+
+## Tester cet appareil
+Réglages → « Tester cet appareil » vérifie sur la tablette :
+- l'enregistrement local et l'espace disponible ;
+- la protection contre l'effacement, avec un bouton pour la demander ;
+- le fonctionnement hors connexion et l'installation sur l'écran d'accueil ;
+- le lecteur de QR utilisé, avec un **test de la caméra** sur un QR de l'application ;
+- l'écran et l'adresse utilisée dans les QR.
+
+L'écran propose aussi un **protocole d'essai en classe** de 15 minutes, à suivre avant la première vraie séance.
 
 ## Interface pensée pour la tablette
 L'application se pilote principalement **au toucher, avec de gros boutons**, sur une tablette tenue à l'horizontale.
@@ -157,4 +200,6 @@ npm run test:e2e  # navigateur (Playwright à installer séparément) : ordinate
 ## Limites connues
 - Les durées de séance et de rotation ne sont pas gérées : seul le nombre de rotations est réglable.
 - La projection se synchronise sur le même appareil (deux fenêtres du même navigateur), pas entre deux appareils différents.
-- Données stockées sur l'appareil uniquement, sans synchronisation.
+- Données stockées sur l'appareil uniquement, sans synchronisation. Le transfert entre appareils se fait par fichier (export / import par fusion).
+- Le lecteur de QR maison n'a été testé que sur des images simulées et une caméra simulée : il reste à l'essayer sur une vraie tablette (voir le protocole d'essai).
+- Le hors connexion suppose une première ouverture avec Internet par l'adresse web ; après une mise à jour publiée, la nouvelle version arrive à la prochaine ouverture en ligne.

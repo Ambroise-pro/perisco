@@ -1382,10 +1382,10 @@
     return { db: out, report };
   }
 
-  /** Séances clôturées depuis la dernière sauvegarde exportée (pour le rappel). */
+  /** Séances clôturées depuis la dernière sauvegarde exportée (pour le rappel ; classes exemples exclues). */
   function unsavedSessions(db) {
     const since = db.lastExportAt || 0;
-    return db.classes.reduce((n, c) => n + c.sessions.filter(s => s.status === 'closed' && (s.closedAt || 0) > since).length, 0);
+    return db.classes.filter(c => !c.demo).reduce((n, c) => n + c.sessions.filter(s => s.status === 'closed' && (s.closedAt || 0) > since).length, 0);
   }
 
   function markExported(db, at) { db.lastExportAt = at || Date.now(); return db; }

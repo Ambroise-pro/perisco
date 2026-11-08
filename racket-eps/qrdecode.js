@@ -90,7 +90,8 @@
   }
 
   // Seuillage local : pixel sombre s'il est nettement sous la moyenne de son voisinage.
-  function binarize(gray, w, h) {
+  function binarize(gray, w, h, factor) {
+    factor = factor || 0.9;
     const integ = new Float64Array((w + 1) * (h + 1));
     for (let y = 0; y < h; y++) {
       let row = 0;
@@ -107,7 +108,7 @@
         const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
         const sum = integ[y1 * (w + 1) + x1] - integ[y0 * (w + 1) + x1] - integ[y1 * (w + 1) + x0] + integ[y0 * (w + 1) + x0];
         const mean = sum / ((x1 - x0) * (y1 - y0));
-        out[y * w + x] = gray[y * w + x] < mean * 0.9 - 2 ? 1 : 0;
+        out[y * w + x] = gray[y * w + x] < mean * factor - 2 ? 1 : 0;
       }
     }
     return out;
@@ -198,8 +199,11 @@
   }
 
   // Choix de trois motifs formant un triangle rectangle isocèle ; renvoie [hautGauche, hautDroit, basGauche].
-  function pickTriple(c) {
-    let best = null;
+  function pickTriple(c) { const all = pickTriples(c); return all.length ? all[0] : null; }
+
+  // Tous les triplets plausibles, du meilleur au moins bon (on les essaie dans cet ordre).
+  function pickTriples(c) {
+    const list = [];
     for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) for (let k = j + 1; k < c.length; k++) {
       const p = [c[i], c[j], c[k]];
       const sizes = p.map(q => q.size), ms = (sizes[0] + sizes[1] + sizes[2]) / 3;
@@ -213,14 +217,12 @@
       const right = Math.abs(hyp * hyp - a * a - b * b) / (hyp * hyp);
       if (iso > 0.25 || right > 0.25) continue;
       const score = iso + right + (Math.max(...sizes) / Math.min(...sizes) - 1) - Math.min(p[0].n, p[1].n, p[2].n) * 0.01;
-      if (!best || score < best.score) {
-        let [tr, bl] = others;
-        const cross = (tr.x - tl.x) * (bl.y - tl.y) - (tr.y - tl.y) * (bl.x - tl.x);
-        if (cross < 0) [tr, bl] = [bl, tr];
-        best = { score, tl, tr, bl, module: ms };
-      }
+      let [tr, bl] = others;
+      const cross = (tr.x - tl.x) * (bl.y - tl.y) - (tr.y - tl.y) * (bl.x - tl.x);
+      if (cross < 0) [tr, bl] = [bl, tr];
+      list.push({ score, tl, tr, bl, module: ms });
     }
-    return best;
+    return list.sort((a, b) => a.score - b.score).slice(0, 4);
   }
 
   /* ---------------- Transformation perspective ---------------- */
@@ -251,14 +253,20 @@
     return [(m[0] * u + m[3] * v + m[6]) / den, (m[1] * u + m[4] * v + m[7]) / den];
   }
 
+  const SAMPLE_PTS = [[0, 0], [-0.2, 0], [0.2, 0], [0, -0.2], [0, 0.2]];
   function sampleGrid(bin, w, h, T, dim) {
     const g = [];
     for (let r = 0; r < dim; r++) {
       const row = [];
       for (let c = 0; c < dim; c++) {
-        const [x, y] = apply(T, c + 0.5, r + 0.5);
-        const xi = Math.round(x), yi = Math.round(y);
-        row.push(xi >= 0 && yi >= 0 && xi < w && yi < h ? bin[yi * w + xi] === 1 : false);
+        // Vote à la majorité sur 5 points du module (centre et ±0,2 module) : résiste au bruit.
+        let dark = 0;
+        for (const [du, dv] of SAMPLE_PTS) {
+          const [x, y] = apply(T, c + 0.5 + du, r + 0.5 + dv);
+          const xi = Math.round(x), yi = Math.round(y);
+          if (xi >= 0 && yi >= 0 && xi < w && yi < h && bin[yi * w + xi] === 1) dark++;
+        }
+        row.push(dark >= 3);
       }
       g.push(row);
     }
@@ -411,11 +419,36 @@
   function decode(img) {
     const w = img.width, h = img.height;
     if (!w || !h) return null;
-    const bin = binarize(toGray(img), w, h);
-    const finders = findFinders(bin, w, h);
-    if (finders.length < 3) return null;
-    const f = pickTriple(finders);
-    if (!f) return null;
+    const gray = toGray(img);
+    // Plusieurs seuils (reflets, faible contraste), puis plusieurs triplets de motifs plausibles.
+    for (const factor of [0.9, 0.82, 0.96]) {
+      const bin = binarize(gray, w, h, factor);
+      const finders = findFinders(bin, w, h);
+      if (finders.length < 3) continue;
+      for (const f of pickTriples(finders)) {
+        const text = decodeWith(bin, w, h, f);
+        if (text != null) return text;
+      }
+    }
+    return null;
+  }
+
+  // Taille d'un module remesurée le long des axes réels du code (TL→TR et TL→BL) : les mesures
+  // horizontales/verticales initiales sont trop longues quand le code est tourné (jusqu'à ×1,41 à 45°).
+  function refineModule(bin, w, h, f) {
+    const sizes = [];
+    const along = (p, q) => { const len = Math.hypot(q.x - p.x, q.y - p.y); return [(q.x - p.x) / len, (q.y - p.y) / len]; };
+    const u = along(f.tl, f.tr), v = along(f.tl, f.bl);
+    for (const [p, dir] of [[f.tl, u], [f.tr, u], [f.tl, v], [f.bl, v]]) {
+      const r = crossCheck(bin, w, h, p.x, p.y, dir[0], dir[1], f.module * 7 * 1.6);
+      if (r) sizes.push(r.total / 7);
+    }
+    if (sizes.length < 2) return f;
+    return Object.assign({}, f, { module: sizes.reduce((a, b) => a + b, 0) / sizes.length });
+  }
+
+  function decodeWith(bin, w, h, f0) {
+    const f = refineModule(bin, w, h, f0);
     const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     let dim = Math.round(((d(f.tl, f.tr) + d(f.tl, f.bl)) / 2) / f.module) + 7;
     switch (dim & 3) { case 0: dim++; break; case 2: dim--; break; case 3: dim -= 2; break; default: break; }

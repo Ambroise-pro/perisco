@@ -634,6 +634,9 @@ test('Sauvegardes : export d\'une classe, import par fusion sans écraser les au
   const a = R.createDemoClass({ students: 8, sessions: 2, seed: 'A', name: 'Classe A' });
   const b = R.createDemoClass({ students: 6, sessions: 1, seed: 'B', name: 'Classe B' });
   db.classes.push(a, b); db.active = a.id;
+  // Les classes exemples ne déclenchent pas de rappel ; une vraie classe, si.
+  assert.equal(R.unsavedSessions(db), 0);
+  a.demo = false; b.demo = false;
   // Rappel : 3 séances clôturées jamais exportées
   assert.equal(R.unsavedSessions(db), 3);
   R.markExported(db, Date.now() + 1000);

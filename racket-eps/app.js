@@ -91,7 +91,10 @@
     $('nav').innerHTML = TABS.map(([id, t, ic]) => `<button type="button" class="tab-btn ${tab === id ? 'active' : ''}" aria-current="${tab === id ? 'page' : 'false'}" data-action="tab" data-tab="${id}">${icon(ic)}<span>${t}</span></button>`).join('');
     document.querySelectorAll('.top [data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     $('banner').innerHTML = storageError ? `<div class="notice warn" role="alert">${esc(storageError)} <button class="btn" data-action="export-json">Exporter</button></div>` : '';
-    const views = { dashboard, students, session, groups: groupsView, ranking, history, settings };
+    const views = { dashboard, students, session, groups: groupsView, ranking, history, settings, diagnostic };
+    // Pastille sur le bouton de sauvegarde : séances clôturées non encore sauvegardées
+    const unsaved = R.unsavedSessions(db), saveBtn = document.querySelector('.top [data-action="export-json"]');
+    if (saveBtn) { saveBtn.dataset.count = unsaved ? String(unsaved) : ''; saveBtn.setAttribute('aria-label', 'Sauvegarder (export JSON)' + (unsaved ? ' — ' + unsaved + ' séance(s) non sauvegardée(s)' : '')); }
     $('view').innerHTML = !c ? welcome() : (views[tab] || dashboard)(c);
   }
 
@@ -116,7 +119,10 @@
     const status = s ? (s.status === 'setup' ? 'Appel et terrains à valider' : (s.reopened ? 'Séance rouverte pour correction' : s.matches.filter(m => m.done).length + ' / ' + s.matches.length + ' matchs terminés')) : '';
     const medal = ['#f5c04a', '#d8e1e8', '#d9a066'];
     const tile = (tabId, ic, title, sub) => `<button type="button" class="home-tile" data-action="tab" data-tab="${tabId}">${icon(ic, 46)}<span><b>${title}</b><span class="muted">${sub}</span></span></button>`;
-    return `${demoNotice(c)}<div class="home">
+    const unsaved = R.unsavedSessions(db);
+    const backup = unsaved ? `<div class="notice warn backup-reminder" role="status"><span><b>${unsaved} séance(s) clôturée(s) non sauvegardée(s).</b> Les données ne sont que sur cet appareil : sauvegardez-les (fichier, ENT, clé USB).</span>
+      <span class="actions"><button type="button" class="btn primary" data-action="export-json">Sauvegarder maintenant</button>${canShareFiles() ? '<button type="button" class="btn" data-action="share-backup">Partager…</button>' : ''}</span></div>` : '';
+    return `${demoNotice(c)}${backup}<div class="home">
       <section class="panel hero">
         <div><div class="eyebrow">${s ? 'Séance ' + s.seq + ' en cours' : 'Séance ' + (Math.max(0, ...c.sessions.map(x => x.seq)) + 1)}</div>
         <h1>${s ? esc(R.MODES[s.mode]) : 'Prête à démarrer'}</h1>
@@ -558,14 +564,86 @@
       <div class="field"><label for="initElo">Elo initial du cycle</label><input type="number" id="initElo" min="100" max="3000" value="${Number.isFinite(c.initialElo) ? c.initialElo : 1000}"></div></div>
       <button class="btn primary" data-action="save-settings">Enregistrer les réglages</button>
       <p class="muted small">K est mémorisé à la création de chaque séance : le modifier n'affecte pas les séances passées. ${anyClosed ? 'Modifier l\'Elo initial recalcule tout le cycle.' : ''} Le nombre de terrains par défaut s'applique aux prochaines séances ; pour la séance en cours, utilisez le réglage « Terrains disponibles » de l'onglet Séance.</p></section>
-      <section class="panel"><h2>Sauvegarde et transfert</h2><div class="actions"><button class="btn" data-action="export-json">Exporter sauvegarde JSON</button><button class="btn" data-action="export-csv">Exporter classement CSV</button>
-      <label class="btn">Importer sauvegarde JSON<input type="file" id="importFile" accept="application/json,.json" style="display:none"></label></div>
-      <p class="muted small">Le stockage local n'est pas synchronisé entre appareils. Avant chaque enregistrement, la version précédente est gardée comme copie de secours.</p></section>
+      <section class="panel"><h2>Tester cet appareil</h2><p class="muted small">Vérifie sur la tablette : stockage, fonctionnement hors connexion, caméra et lecture des QR, écran. À faire avant la première séance.</p>
+      <button class="btn primary" data-action="tab" data-tab="diagnostic">Tester cet appareil</button></section>
+      <section class="panel"><h2>Sauvegarde et transfert</h2>
+      <p class="muted small">Dernière sauvegarde : <b>${db.lastExportAt ? new Date(db.lastExportAt).toLocaleString('fr-FR') : 'jamais'}</b>${R.unsavedSessions(db) ? ' · <span class="bad">' + R.unsavedSessions(db) + ' séance(s) clôturée(s) depuis</span>' : ''}.</p>
+      <div class="actions"><button class="btn primary" data-action="export-json">Sauvegarder toutes les classes</button>
+      <button class="btn" data-action="export-class">Exporter seulement « ${esc(c.name)} »</button>
+      ${canShareFiles() ? '<button class="btn" data-action="share-backup">Partager la sauvegarde…</button>' : ''}
+      <button class="btn" data-action="export-csv">Classement CSV</button>
+      <label class="btn">Importer une sauvegarde<input type="file" id="importFile" accept="application/json,.json" style="display:none"></label></div>
+      <p class="muted small">Pour passer sur un autre appareil : exportez la classe, envoyez le fichier (ENT, clé USB, partage), puis importez-le sur l'autre appareil. L'import <b>ajoute</b> les classes du fichier ; pour une classe déjà présente, vous choisissez de la remplacer, de garder les deux ou de l'ignorer. Les autres classes ne sont jamais touchées.</p></section>
       <section class="panel"><h2>QR codes des tablettes</h2>
       <div class="field"><label for="publicUrl">Adresse web de l'application (ouverte par les tablettes)</label><input id="publicUrl" type="url" placeholder="https://…" value="${esc(db.publicUrl || '')}"></div>
-      <p class="muted small">Adresse utilisée : <b>${esc(publicBase() || 'aucune')}</b>. Laissez vide pour utiliser l'adresse de cette page${location.protocol === 'file:' ? ' — <span class="bad">ouverte en fichier local, elle n\'est pas accessible aux tablettes : indiquez l\'adresse Vercel</span>' : ''}. ${scanBackend() === 'none' ? '<span class="bad">Ce navigateur n\'a pas de lecteur de QR intégré : en mode scan, saisissez le code texte affiché par la tablette (Chrome sur Android, Chromebook ou Mac lit les QR par la caméra).</span>' : 'Lecture des QR par la caméra : disponible (lecteur intégré du navigateur).'}</p>
+      <p class="muted small">Adresse utilisée : <b>${esc(publicBase() || 'aucune')}</b>. Laissez vide pour utiliser l'adresse de cette page${location.protocol === 'file:' ? ' — <span class="bad">ouverte en fichier local, elle n\'est pas accessible aux tablettes : indiquez l\'adresse Vercel</span>' : ''}. Lecture des QR par la caméra : ${scanBackend() === 'native' ? 'lecteur intégré du navigateur' : (scanBackend() === 'racket' ? 'lecteur de l\'application (fonctionne aussi sur iPad et Windows)' : '<span class="bad">indisponible</span>')}.</p>
       <button class="btn" data-action="save-url">Enregistrer l'adresse</button></section>
       <section class="panel"><h2>Gestion</h2><button class="btn danger" data-action="delete-class">Supprimer cette classe et ses données</button></section>`;
+  }
+
+  /* ---------------- Tester cet appareil ---------------- */
+  function canShareFiles() {
+    try { return !!(navigator.canShare && navigator.share && navigator.canShare({ files: [new File(['{}'], 't.json', { type: 'application/json' })] })); } catch (e) { return false; }
+  }
+
+  function diagnostic() {
+    const touch = (navigator.maxTouchPoints || 0) > 0;
+    const installed = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+    const row = (id, label, value) => `<div class="diag-row"><span class="diag-label">${label}</span><span class="diag-val" id="${id}">${value}</span></div>`;
+    setTimeout(updateDiagnostic, 0);
+    return `<section class="panel"><div class="row between"><h2>Tester cet appareil</h2><span class="chip">Version ${APP_VERSION}</span></div>
+      ${row('dg-storage', 'Stockage des données', '…')}
+      ${row('dg-persist', 'Protection contre l\'effacement', '…')}
+      ${row('dg-offline', 'Fonctionnement hors connexion', '…')}
+      ${row('dg-install', 'Application installée', installed ? '✓ Oui, ouverte depuis l\'écran d\'accueil' : '⚠ Non : sur iPad, Partager → « Sur l\'écran d\'accueil » ; sur Android, menu → « Installer l\'application ». Installée, l\'application garde mieux ses données.')}
+      ${row('dg-qr', 'Lecture des QR par la caméra', scanBackend() === 'native' ? '✓ Lecteur intégré du navigateur' : (scanBackend() === 'racket' ? '✓ Lecteur de l\'application' : '⚠ Indisponible : saisie du code'))}
+      ${row('dg-camera', 'Caméra', '<button type="button" class="btn" data-action="scan-test">Tester la caméra</button> <span class="muted small">Filmez un QR de l\'application (projection, autre tablette).</span>')}
+      ${row('dg-screen', 'Écran', window.innerWidth + ' × ' + window.innerHeight + ' px · ' + (touch ? '✓ tactile' : 'sans écran tactile') + ' · ' + (window.innerWidth >= window.innerHeight ? 'paysage' : 'portrait'))}
+      ${row('dg-url', 'Adresse pour les tablettes (QR)', publicBase() ? '✓ ' + esc(publicBase()) : '⚠ Aucune : indiquez l\'adresse web dans Réglages → QR codes')}
+      <div class="actions" style="margin-top:12px"><button type="button" class="btn" data-action="persist">Protéger les données de l'appareil</button><button type="button" class="btn" data-action="tab" data-tab="settings">Retour aux réglages</button></div></section>
+      <section class="panel"><h2>Protocole d'essai en classe (15 minutes)</h2>
+      <ol class="protocol">
+        <li>Ouvrir l'application <b>avec Internet</b>, l'installer sur l'écran d'accueil, puis vérifier ici « hors connexion : prête ».</li>
+        <li>Créer une <b>classe exemple</b> (24 élèves, 2 séances) et ouvrir le classement : graphiques et fiches s'affichent.</li>
+        <li>Couper le Wi-Fi, fermer puis rouvrir l'application : elle doit s'ouvrir et retrouver les données.</li>
+        <li>Lancer une séance « Poules classiques » sur 4 terrains : faire l'appel en touchant les tuiles, valider.</li>
+        <li>Toucher un terrain, saisir un score avec « X gagne : 11 » et « + », valider : le terrain passe au match suivant.</li>
+        <li>Afficher le <b>QR d'une poule</b>, le scanner avec une tablette élève, jouer deux matchs, terminer la poule.</li>
+        <li>Sur l'appareil du professeur, <b>mode scan</b> : filmer le QR de résultat de la tablette ; les résultats s'enregistrent. Noter la distance et la lumière qui fonctionnent.</li>
+        <li>Ouvrir la projection (si vidéoprojecteur) : lisibilité depuis le fond du gymnase.</li>
+        <li>Clôturer la séance, puis <b>sauvegarder</b> (bouton en haut) et vérifier le fichier.</li>
+        <li>Noter ce qui a gêné (boutons trop petits, lenteur, reflets) pour l'ajuster.</li>
+      </ol></section>`;
+  }
+
+  async function updateDiagnostic() {
+    const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+    // Stockage : écriture/lecture réelles, puis espace disponible
+    let storage;
+    try {
+      localStorage.setItem('racket_eps_test', 'ok');
+      const okRW = localStorage.getItem('racket_eps_test') === 'ok';
+      localStorage.removeItem('racket_eps_test');
+      storage = okRW ? '✓ Enregistrement local opérationnel' : '⚠ Lecture impossible';
+    } catch (e) { storage = '⚠ Stockage indisponible (navigation privée ?) : les données seraient perdues'; }
+    try {
+      if (navigator.storage && navigator.storage.estimate) {
+        const est = await navigator.storage.estimate();
+        const used = JSON.stringify(db).length;
+        storage += ` · données : ${(used / 1024).toFixed(0)} Ko` + (est.quota ? ` · espace disponible : ${(est.quota / 1048576).toFixed(0)} Mo` : '');
+      }
+    } catch (e) { /* ignore */ }
+    set('dg-storage', storage);
+    try {
+      const p = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : null;
+      set('dg-persist', p === null ? 'Information indisponible sur ce navigateur' : (p ? '✓ Données protégées (le navigateur ne les effacera pas pour libérer de la place)' : '⚠ Non protégées : touchez « Protéger les données » ou installez l\'application'));
+    } catch (e) { set('dg-persist', 'Information indisponible'); }
+    if (!offline.supported) set('dg-offline', location.protocol === 'file:' ? '⚠ Ouverte en fichier local : le mode hors connexion fonctionne avec l\'adresse web (https)' : '⚠ Non pris en charge par ce navigateur');
+    else {
+      let cached = false;
+      try { cached = (await caches.keys()).some(k => k.indexOf('racket-eps-app') === 0); } catch (e) { /* ignore */ }
+      set('dg-offline', cached && navigator.serviceWorker.controller ? '✓ Prête : l\'application s\'ouvre sans réseau' : (cached ? '✓ Copie locale enregistrée ; rechargez une fois la page pour l\'activer' : '… Préparation en cours (gardez la page ouverte avec Internet)'));
+    }
   }
 
   /* ---------------- Graphiques d'évolution (SVG natif, une série, survol + clavier) ---------------- */
@@ -856,8 +934,10 @@
   /* --- Mode scan (appareil de l'enseignant) : petite fenêtre avec aperçu caméra --- */
   const scan = { panel: null, stream: null, timer: null, busy: false, last: '', lastAt: 0, detector: null, auto: true };
   // Lecture caméra : lecteur QR intégré au navigateur (BarcodeDetector) ; sinon saisie du code.
+  // Lecture caméra : lecteur intégré du navigateur s'il existe, sinon lecteur maison (qrdecode.js).
   function scanBackend() {
-    return typeof window.BarcodeDetector === 'function' ? 'native' : 'none';
+    if (typeof window.BarcodeDetector === 'function') return 'native';
+    return window.RacketQRDecode ? 'racket' : 'none';
   }
   function beep(ok) {
     try {
@@ -915,6 +995,15 @@
           const codes = await scan.detector.detect(video);
           if (codes && codes.length) text = codes[0].rawValue;
         }
+        if (!text && window.RacketQRDecode) {
+          // Image réduite à 640 px de large au plus : assez pour lire, rapide sur tablette.
+          const cw = Math.min(640, video.videoWidth), ch = Math.round(video.videoHeight * cw / video.videoWidth);
+          scan.canvas = scan.canvas || document.createElement('canvas');
+          scan.canvas.width = cw; scan.canvas.height = ch;
+          const ctx = scan.canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(video, 0, 0, cw, ch);
+          text = window.RacketQRDecode.decode(ctx.getImageData(0, 0, cw, ch));
+        }
         if (text && (text !== scan.last || Date.now() - scan.lastAt > 4000)) { scan.last = text; scan.lastAt = Date.now(); handleScanned(text); }
       } catch (e) { /* image suivante */ }
       scan.busy = false;
@@ -935,6 +1024,7 @@
 
   let pendingScan = null;
   function handleScanned(text, force) {
+    if (scan.test) { beep(true); scanStatus('✓ QR lu : ' + String(text).slice(0, 60) + (String(text).length > 60 ? '…' : ''), 'ok'); return; }
     const c = cl(), s = c && R.activeSession(c);
     if (!scan.auto && !force) {
       if (String(text).trim().toUpperCase().indexOf('RP1.') === 0) {
@@ -1112,7 +1202,7 @@
     'close-session': () => {
       const c = cl(), s = R.activeSession(c);
       if (!confirm('Clôturer la séance ? Les Elo seront calculés et le classement mis à jour.')) return;
-      const r = act(() => R.closeSession(c, s), 'Séance clôturée');
+      const r = act(() => R.closeSession(c, s), 'Séance clôturée — pensez à sauvegarder (bouton en haut)');
       if (r && r.ok) { tab = 'ranking'; render(); }
     },
     'reopen': el => {
@@ -1163,7 +1253,7 @@
     'pool-edit': () => { pool.st.finished = false; savePool(); renderPoolSheet(); },
     'qr-close': () => { const d = $('qrDialog'); if (d.close) d.close(); else d.removeAttribute('open'); },
     'scan-open': () => openScan(),
-    'scan-close': () => closeScan(),
+    'scan-close': () => { closeScan(); scan.test = false; },
     'scan-confirm': () => { if (pendingScan) { const t = pendingScan; pendingScan = null; scanResultCard(''); handleScanned(t, true); } },
     'scan-ignore': () => { pendingScan = null; scanResultCard(''); scanStatus('Code ignoré.', ''); },
     'scan-undo': el => {
@@ -1200,7 +1290,30 @@
     },
     'proj-fullscreen': () => { if (document.fullscreenElement) document.exitFullscreen(); else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); },
     'proj-close': () => { window.close(); setTimeout(() => { location.hash = ''; location.reload(); }, 150); },
-    'export-json': () => download('racket-eps-sauvegarde-' + today() + '.json', JSON.stringify(db, null, 2), 'application/json'),
+    'export-json': () => {
+      download('racket-eps-sauvegarde-' + today() + '.json', JSON.stringify(db, null, 2), 'application/json');
+      R.markExported(db); save(); render(); toast('Sauvegarde téléchargée');
+    },
+    'export-class': () => {
+      const c = cl();
+      download('racket-eps-' + c.name.replace(/[^a-z0-9]+/gi, '-') + '-' + today() + '.json', JSON.stringify(R.exportClass(db, c.id), null, 2), 'application/json');
+      toast('Classe exportée');
+    },
+    'share-backup': async () => {
+      const file = new File([JSON.stringify(db, null, 2)], 'racket-eps-sauvegarde-' + today() + '.json', { type: 'application/json' });
+      try {
+        await navigator.share({ files: [file], title: 'Sauvegarde Racket EPS' });
+        R.markExported(db); save(); render(); toast('Sauvegarde partagée');
+      } catch (e) { if (e && e.name !== 'AbortError') toast('Partage impossible : ' + e.message, true); }
+    },
+    'persist': async () => {
+      try {
+        const ok = navigator.storage && navigator.storage.persist ? await navigator.storage.persist() : false;
+        toast(ok ? 'Données protégées sur cet appareil' : 'Le navigateur a refusé : installez l\'application sur l\'écran d\'accueil', !ok);
+      } catch (e) { toast('Protection indisponible sur ce navigateur', true); }
+      updateDiagnostic();
+    },
+    'scan-test': () => { closeScan(); scan.test = true; openScan(); },
     'export-csv': () => {
       const c = cl();
       const rows = [['Rang', 'Eleve', 'Elo', 'Matchs', 'Victoires', 'Defaites', 'Points marques', 'Points encaisses', 'Adversaires distincts', 'Absences']]
@@ -1274,12 +1387,22 @@
     el.value = '';
     if (!file) return;
     try {
-      const next = R.parseDB(await file.text());
-      if (!confirm('Remplacer toutes les données locales par cette sauvegarde ? (Pensez à exporter les données actuelles avant.)')) return;
+      const incoming = R.parseDB(await file.text());
+      const plan = R.planImport(db, incoming);
+      if (!plan.length) return toast('Ce fichier ne contient aucune classe.', true);
+      const choices = {};
+      for (const p of plan) {
+        if (!p.exists) continue;
+        if (confirm('La classe « ' + p.name + ' » existe déjà sur cet appareil (' + p.localSessions + ' séance(s) ; fichier : ' + p.sessions + ' séance(s)' + (p.incomingNewer ? ', plus récent' : '') + ').\n\nOK = la remplacer par celle du fichier\nAnnuler = autres choix')) choices[p.id] = 'replace';
+        else choices[p.id] = confirm('Garder les deux (la classe du fichier sera importée comme copie) ?\n\nOK = garder les deux\nAnnuler = ignorer cette classe') ? 'copy' : 'skip';
+      }
       try { localStorage.setItem(KEY_BAK, JSON.stringify(db)); } catch (e) { /* ignore */ }
-      db = next;
+      const res = R.applyImport(db, incoming, choices);
+      db = res.db;
       if (!cl()) db.active = db.classes[0] ? db.classes[0].id : null;
-      save(); render(); toast('Sauvegarde importée');
+      save(); render();
+      const r = res.report;
+      toast('Import : ' + [r.added && r.added + ' ajoutée(s)', r.replaced && r.replaced + ' remplacée(s)', r.copied && r.copied + ' copiée(s)', r.skipped && r.skipped + ' ignorée(s)'].filter(Boolean).join(', '));
     } catch (e) { toast('Import impossible : ' + e.message, true); }
   }
 
@@ -1303,6 +1426,16 @@
     if (projection || sheetMode) return;
     if (e.key === KEY) { storageError = 'Les données ont été modifiées dans un autre onglet : rechargez la page avant de continuer.'; render(); }
   });
+
+  /* ---------------- Hors connexion (application installable) ---------------- */
+  const APP_VERSION = '2.3.0';
+  const offline = { supported: 'serviceWorker' in navigator && /^https?:$/.test(location.protocol), ready: false, error: null };
+  if (offline.supported) {
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      offline.ready = !!(reg.active || navigator.serviceWorker.controller);
+      navigator.serviceWorker.ready.then(() => { offline.ready = true; });
+    }).catch(e => { offline.error = e.message; });
+  }
 
   db = load();
   if (db.active && !cl()) db.active = db.classes[0] ? db.classes[0].id : null;
