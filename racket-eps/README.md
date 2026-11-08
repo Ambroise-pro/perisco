@@ -63,6 +63,14 @@ Les données restent **sur l'appareil de l'enseignant**, sans serveur. Les résu
 3. **Code de résultat.** En fin de match (« Terminer le match » ou « Forfait »), la tablette affiche un QR de résultat et un code court lisible, par exemple `RE1.K3Q9ZD.8V2MXA.11.4.7QJ0B2C`.
 4. **Mode scan.** L'enseignant ouvre « 📷 Mode scan » : une petite fenêtre avec l'aperçu de la caméra lit le QR présenté. Le code peut aussi être tapé ou dicté ; la saisie tolère minuscules, O/0 et I/L/1. Le résultat est vérifié, enregistré, puis signalé par un bip, avec un bouton « Annuler cette saisie ». On peut aussi décocher « Enregistrer dès la lecture » pour valider chaque résultat à la main.
 
+### Poules classiques en autonomie : une feuille pour toute la poule
+En poules classiques, chaque poule a son **QR de poule** : bouton « QR poule n » dans la séance, et affichage en projection si la case est cochée. La tablette ouvre alors une **feuille de poule** avec **tous les matchs de la poule**.
+- Pour chaque match : grands boutons + / −, « Valider ce match » ou « Forfait ».
+- Un mini-classement des victoires est mis à jour en direct. Les scores sont conservés si la page se recharge.
+- À la fin, « Terminer la poule » affiche **un seul QR de résultat** pour toute la poule, par exemple `RP1.3ATA1R.0.11:1,2:11,FB,4:11,11:5,6:11.04F8SC0`. Ce code contient un élément par match, dans l'ordre : score A:B, `FA` ou `FB` pour un forfait, `-` pour un match non joué.
+- Le mode scan reconnaît ce code et **enregistre tous les résultats d'un coup**. Les matchs non joués sont ignorés et les résultats identiques laissés tels quels ; un résultat différent d'un score déjà saisi demande une confirmation.
+- Une poule de 6 en aller-retour (30 matchs) tient dans un QR de version 14 pour le lien et de version 9 pour le résultat.
+
 Contrôles appliqués au scan :
 - le code doit appartenir à la séance en cours et au bon match ;
 - une **empreinte de contrôle**, calculée avec un jeton propre à la séance, rejette les codes mal recopiés ou modifiés (c'est une vérification, pas un chiffrement) ;

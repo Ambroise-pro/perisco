@@ -583,3 +583,48 @@ test('Groupes de travail : serpentin équilibré, par niveau, absents exclus, ef
   assert.ok(c.workGroups.groups[3].includes(id));
   assert.deepEqual(R.ranks(c).map(p => p.elo), before);
 });
+
+test('Feuille de poule : tous les matchs de la poule, un code pour toute la poule', () => {
+  const c = makeClass(10, 2);
+  const s = newSession(c, { mode: 'pools', groupSize: 5 });
+  R.startSession(c, s);
+  const gi = 1, g = s.groups[gi], ms = R.groupMatches(s, gi);
+  assert.equal(ms.length, 10, 'poule de 5 : 10 matchs');
+  const d = R.decodePoolSheet(R.encodeSheet(R.poolSheetData(c, s, gi)));
+  assert.equal(d.p.length, 5);
+  assert.equal(d.pairs.length, 10);
+  d.pairs.forEach(([a, b], i) => { assert.equal(g[a], ms[i].a); assert.equal(g[b], ms[i].b); });
+  // URL compacte : le QR reste petit
+  assert.ok(R.encodeSheet(R.poolSheetData(c, s, gi)).length < 400);
+  // Les élèves jouent tous leurs matchs (dont un forfait), un match reste non joué
+  const results = d.pairs.map((_, i) => (i === 9 ? null : i === 3 ? { forfeit: 'b' } : (i % 2 ? { sa: 11, sb: i } : { sa: i, sb: 11 })));
+  const code = R.poolResultCode(d, results);
+  assert.match(code, /^RP1\.[0-9A-Z]{6}\.1\..+\.[0-9A-Z]{7}$/);
+  assert.throws(() => R.poolResultCode(d, d.pairs.map(() => ({ sa: 5, sb: 5 }))), /nul/);
+  assert.throws(() => R.poolResultCode(d, d.pairs.map(() => null)), /Aucun match/);
+  const r = R.applyAnyCode(c, s, code);
+  assert.ok(r.ok, r.error);
+  assert.equal(r.kind, 'pool');
+  assert.deepEqual([r.recorded, r.unchanged, r.skipped], [9, 0, 1]);
+  assert.ok(ms.slice(0, 9).every(m => m.done) && !ms[9].done);
+  assert.equal(ms[3].forfeit, ms[3].b);
+  assert.equal(ms[1].sa, 11);
+  // Second scan : rien ne change
+  const again = R.applyPoolResultCode(c, s, code);
+  assert.deepEqual([again.recorded, again.unchanged], [0, 9]);
+  // Correction sur la tablette puis nouveau code : confirmation des résultats différents
+  results[0] = { sa: 11, sb: 0 }; results[9] = { sa: 11, sb: 8 };
+  const code2 = R.poolResultCode(d, results);
+  const r2 = R.applyPoolResultCode(c, s, code2);
+  assert.ok(r2.needsConfirm && r2.conflicts === 1);
+  const r3 = R.applyPoolResultCode(c, s, code2, { confirm: true });
+  assert.deepEqual([r3.recorded, r3.unchanged, r3.skipped], [2, 8, 0]);
+  assert.ok(ms.every(m => m.done));
+  // Codes refusés
+  assert.match(R.applyPoolResultCode(c, s, code2.replace(',11:8.', ',11:9.')).error, /contrôle/);
+  assert.match(R.applyPoolResultCode(c, s, code2.replace('RP1.' + d.s, 'RP1.ZZZZZZ')).error, /autre séance/);
+  assert.match(R.applyPoolResultCode(c, s, 'RP1.' + d.s + '.7.11:2.ABCDEFG').error, /introuvable/);
+  // La séance peut être clôturée, les résultats comptent pour l'Elo
+  playSession(c, s, rng(4));
+  assert.ok(R.closeSession(c, s).ok);
+});

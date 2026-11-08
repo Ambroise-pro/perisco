@@ -1147,6 +1147,117 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * Feuille de poule (poules classiques en autonomie)
+   * ------------------------------------------------------------------ *
+   * Le QR d'une poule ouvre sur la tablette TOUS les matchs de la poule. Les élèves les jouent,
+   * saisissent chaque score, puis la tablette affiche UN code pour toute la poule :
+   *   RP1.<séance>.<n° de poule>.<résultats>.<contrôle>
+   * <résultats> = un élément par match, dans l'ordre de la poule, séparés par « , » :
+   *   « 11:4 » (score A:B), « FA » / « FB » (forfait du joueur A / B), « - » (non joué).
+   * Les joueurs d'un match sont désignés par leur rang dans la poule (0, 1, 2… en base 36).
+   */
+  function groupMatches(s, gi) {
+    return s.matches.filter(m => m.group === gi && m.phase !== 'classement');
+  }
+
+  function poolSheetData(c, s, gi) {
+    const g = (s.groups || [])[gi];
+    if (!g) throw new Error('Poule introuvable.');
+    const nm = id => (c.students.find(p => p.id === id) || {}).name || '?';
+    const idx = id => g.indexOf(id).toString(36);
+    return {
+      v: 1, kind: 'pool', s: shortId(s.id), g: gi, k: ensureQrToken(s), n: s.seq, t: s.target || 11,
+      p: g.map(nm),
+      m: groupMatches(s, gi).map(m => idx(m.a) + idx(m.b)).join('')
+    };
+  }
+
+  function decodePoolSheet(str) {
+    const d = JSON.parse(b64urlToUtf8(String(str || '')));
+    if (!d || d.v !== 1 || d.kind !== 'pool' || !d.s || !d.k || !Array.isArray(d.p) || typeof d.m !== 'string' || d.m.length % 2) throw new Error('Feuille de poule illisible.');
+    d.pairs = [];
+    for (let i = 0; i < d.m.length; i += 2) {
+      const a = parseInt(d.m[i], 36), b = parseInt(d.m[i + 1], 36);
+      if (!(a >= 0 && b >= 0 && a < d.p.length && b < d.p.length)) throw new Error('Feuille de poule illisible.');
+      d.pairs.push([a, b]);
+    }
+    return d;
+  }
+
+  /** Code de résultat de la poule. results[i] = { sa, sb } | { forfeit: 'a'|'b' } | null (non joué). */
+  function poolResultCode(d, results) {
+    const items = d.pairs.map((_, i) => {
+      const r = results[i];
+      if (!r) return '-';
+      if (r.forfeit) return r.forfeit === 'a' ? 'FA' : 'FB';
+      const err = validateScore(r.sa, r.sb);
+      if (err) throw new Error('Match ' + (i + 1) + ' : ' + err);
+      return Number(r.sa) + ':' + Number(r.sb);
+    });
+    if (items.every(x => x === '-')) throw new Error('Aucun match saisi.');
+    const list = items.join(',');
+    return ['RP1', d.s, String(d.g), list, shortHash([d.k, d.s, d.g, list].join('|'))].join('.');
+  }
+
+  function parsePoolResultCode(text) {
+    const t = String(text || '').trim().replace(/\s+/g, '').toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1');
+    const parts = t.split('.');
+    if (parts.length !== 5 || parts[0] !== 'RP1') return { ok: false, error: 'Ce n\'est pas un code de poule Racket EPS.' };
+    const [, sid, g, list, h] = parts;
+    if (!/^\d{1,2}$/.test(g)) return { ok: false, error: 'Numéro de poule illisible.' };
+    const items = list.split(',');
+    for (const it of items) if (!/^(\d{1,3}:\d{1,3}|FA|FB|-)$/.test(it)) return { ok: false, error: 'Résultat illisible dans le code : ' + it };
+    return { ok: true, sid, g: Number(g), list, items, h };
+  }
+
+  /**
+   * Enregistre tous les résultats d'une poule scannés en une fois. Vérifie séance, poule, joueurs
+   * et contrôle. Les matchs non joués sont ignorés ; un match déjà saisi avec un résultat
+   * différent demande une confirmation (opts.confirm) ; les résultats identiques sont laissés tels quels.
+   */
+  function applyPoolResultCode(c, s, text, opts) {
+    opts = opts || {};
+    const p = parsePoolResultCode(text);
+    if (!p.ok) return fail(p.error);
+    if (!s || s.status !== 'playing') return fail('Aucune séance en cours.');
+    if (shortId(s.id) !== p.sid) return fail('Ce code provient d\'une autre séance.');
+    const g = (s.groups || [])[p.g];
+    if (!g) return fail('Poule introuvable dans cette séance.');
+    if (!s.qrToken || shortHash([s.qrToken, p.sid, p.g, p.list].join('|')) !== p.h) return fail('Code de contrôle incorrect : code mal recopié ou modifié.');
+    const ms = groupMatches(s, p.g);
+    if (ms.length !== p.items.length) return fail('Le nombre de matchs ne correspond pas à cette poule.');
+    const plan = [];
+    p.items.forEach((it, i) => {
+      if (it === '-') return;
+      const m = ms[i];
+      let input;
+      if (it === 'FA' || it === 'FB') input = { forfeit: it === 'FA' ? m.a : m.b };
+      else { const [x, y] = it.split(':').map(Number); input = { sa: x, sb: y }; }
+      const same = m.done && (input.forfeit ? m.forfeit === input.forfeit : (!m.forfeit && m.sa === input.sa && m.sb === input.sb));
+      plan.push({ m, input, same, conflict: m.done && !same });
+    });
+    const conflicts = plan.filter(x => x.conflict);
+    if (conflicts.length && !opts.confirm) {
+      return fail(conflicts.length + ' match(s) de la poule ' + (p.g + 1) + ' ont déjà un résultat différent : les remplacer ?', { needsConfirm: true, conflicts: conflicts.length });
+    }
+    let recorded = 0, unchanged = 0;
+    for (const x of plan) {
+      if (x.same) { unchanged++; continue; }
+      const r = recordResult(c, s, x.m.id, x.input, { confirm: true });
+      if (!r.ok) return fail('Match ' + (ms.indexOf(x.m) + 1) + ' : ' + r.error);
+      recorded++;
+    }
+    return { ok: true, pool: p.g, recorded, unchanged, skipped: p.items.length - plan.length, total: p.items.length };
+  }
+
+  /** Aiguillage : code d'un match (RE1) ou d'une poule (RP1). */
+  function applyAnyCode(c, s, text, opts) {
+    const t = String(text || '').trim().toUpperCase();
+    if (t.indexOf('RP1.') === 0) return Object.assign({ kind: 'pool' }, applyPoolResultCode(c, s, text, opts));
+    return Object.assign({ kind: 'match' }, applyResultCode(c, s, text, opts));
+  }
+
+  /* ------------------------------------------------------------------ *
    * Persistance : schéma versionné, migration, validation
    * ------------------------------------------------------------------ */
   function emptyDB() { return { schemaVersion: SCHEMA_VERSION, classes: [], active: null }; }
@@ -1334,6 +1445,7 @@
     canClose, closeSession, cancelSession, reopenSession,
     makeWorkGroups, buildWorkGroups, moveWorkGroup, workGroupStats,
     shortHash, shortId, ensureQrToken, sheetData, encodeSheet, decodeSheet, resultCode, parseResultCode, applyResultCode,
+    groupMatches, poolSheetData, decodePoolSheet, poolResultCode, parsePoolResultCode, applyPoolResultCode, applyAnyCode,
     emptyDB, migrate, validateDB, parseDB, addStudents, renameStudent, nameKey, createDemoClass, DEMO_NAMES
   };
 });

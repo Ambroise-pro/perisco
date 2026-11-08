@@ -198,3 +198,24 @@ button.cd-name:hover{background:#e6f6f1}
 .proj-court .proj-qr svg{width:clamp(90px,7vw,140px)}
 .proj-bench{font-size:clamp(16px,1.6vw,26px);color:#c3d3df}
 @media print{.court-draw{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+/* Feuille de poule (tablette) et QR des poules */
+.pool-sheet{max-width:1100px}
+.pool-rank{display:flex;flex-wrap:wrap;gap:8px}
+.pool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));gap:14px}
+.pool-match{background:#172f42;border:2px solid #2a4560;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.pool-match.done{background:#123227;border-color:#2f8f6e}
+.pm-head{display:flex;justify-content:space-between;align-items:center;font-size:18px}
+.pm-ok{background:#1d977e;color:#fff}
+.pm-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.pm-name{font-size:22px;font-weight:800;overflow-wrap:anywhere}
+.pm-score{display:flex;align-items:center;gap:10px}
+.pm-score output{font-size:36px;font-weight:800;min-width:2ch;text-align:center;font-variant-numeric:tabular-nums}
+.pm-btn{min-width:56px;min-height:56px;font-size:26px}
+.pm-validate{min-height:52px;font-size:18px}
+.pm-result{font-size:20px;font-weight:700}
+.pm-err{margin:0;min-height:0}
+.pools-auto .actions .btn{min-height:48px}
+.proj-pools{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:1.4vw}
+.proj-pool{display:flex;gap:1.2vw;align-items:center;background:#102436;border:3px solid #274157;border-radius:18px;padding:1vw}
+.proj-pool .proj-qr svg{width:clamp(120px,10vw,180px)}
+.proj-pool-names{font-size:clamp(16px,1.6vw,26px);color:#c3d3df}

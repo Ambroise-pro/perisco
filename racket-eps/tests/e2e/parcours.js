@@ -350,6 +350,51 @@ async function qrFlow(browser) {
   await page.fill('#scanCode', code);
   await page.press('#scanCode', 'Enter');
   check(/Déjà enregistré/.test(await page.textContent('.scan-status')), 'second scan du même code : rien n\'est modifié');
+  // Poules en autonomie : QR de poule → tous les matchs sur la tablette → un seul code
+  await page.click('[data-action="scan-close"]');
+  await page.click('[data-action="qr-pool"][data-group="0"]');
+  await page.waitForSelector('#qrDialog[open]');
+  const poolHref = await page.getAttribute('#qrDialog .qr-link a', 'href');
+  check(poolHref.includes('#p=') && await page.$('#qrDialog .qr-img svg') !== null, 'QR de la poule 1 dessiné (lien vers la feuille de poule)');
+  await page.click('[data-action="qr-close"]');
+  const pt = await tab.newPage();
+  pt.on('pageerror', e => errors.push('tablette poule : ' + e.message));
+  pt.on('dialog', d => d.accept());
+  await pt.goto(poolHref);
+  await pt.waitForSelector('.pool-match');
+  const nPool = await pt.$$eval('.pool-match', n => n.length);
+  check(nPool === 6, 'tablette : les 6 matchs de la poule affichés');
+  for (let i = 0; i < nPool; i++) {
+    if (i === 2) {
+      await pt.click('.pool-grid > .pool-match >> nth=2 >> summary');
+      await pt.click(`[data-action="pool-forfeit"][data-i="${i}"][data-side="b"]`);
+      continue;
+    }
+    for (let k = 0; k < 11; k++) await pt.click(`[data-action="pool-step"][data-i="${i}"][data-side="${i % 2 ? 'b' : 'a'}"][data-delta="1"]`);
+    for (let k = 0; k < i + 1; k++) await pt.click(`[data-action="pool-step"][data-i="${i}"][data-side="${i % 2 ? 'a' : 'b'}"][data-delta="1"]`);
+    await pt.click(`[data-action="pool-validate"][data-i="${i}"]`);
+    if (i === 1) { await pt.reload(); await pt.waitForSelector('.pool-match'); }
+  }
+  check(await pt.$$eval('.pool-match.done', n => n.length) === 6, 'tablette : 6 matchs validés (dont un forfait), conservés après rechargement');
+  await pt.screenshot({ path: path.join(OUT, 'poule-tablette.png'), fullPage: true });
+  await pt.click('[data-action="pool-finish"]');
+  const poolCode = (await pt.textContent('.sheet-code')).trim();
+  check(/^RP1\./.test(poolCode) && await pt.$('.sheet .qr-img svg') !== null, 'tablette : un QR et un code pour toute la poule (' + poolCode.length + ' caractères)');
+  await pt.screenshot({ path: path.join(OUT, 'poule-resultat.png'), fullPage: true });
+  await page.click('[data-action="scan-open"]');
+  await page.waitForSelector('.scan-panel');
+  await page.fill('#scanCode', poolCode);
+  await page.press('#scanCode', 'Enter');
+  await page.waitForFunction(() => /Poule 1/.test(document.querySelector('.scan-status').textContent));
+  const poolDone = await page.evaluate(() => {
+    const c = window.__racket.getDB().classes[0], s = c.sessions.find(x => x.status !== 'closed');
+    const ms = window.RacketEngine.groupMatches(s, 0);
+    return { all: ms.every(m => m.done), forfeit: !!ms[2].forfeit, n: ms.length };
+  });
+  check(poolDone.all && poolDone.forfeit && poolDone.n === 6, 'scan du code de poule : les 6 résultats enregistrés d\'un coup');
+  await page.fill('#scanCode', poolCode);
+  await page.press('#scanCode', 'Enter');
+  check(/déjà enregistrée/.test(await page.textContent('.scan-status')), 'second scan de la poule : rien ne change');
   await page.click('[data-action="scan-close"]');
   check(await page.$('.scan-panel') === null, 'mode scan fermé (caméra arrêtée)');
   check(errors.length === 0, 'aucune erreur JavaScript' + (errors.length ? ' : ' + errors.join(' | ') : ''));

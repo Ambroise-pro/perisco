@@ -11,7 +11,8 @@
   let db = null;
   let tab = 'dashboard', storageError = null, partitionKey = null;
   const projection = location.hash === '#projection';
-  const sheetMode = location.hash.indexOf('#f=') === 0;
+  const poolSheetMode = location.hash.indexOf('#p=') === 0;     // feuille de poule (tablette)
+  const sheetMode = location.hash.indexOf('#f=') === 0 || poolSheetMode;
 
   /* ---------------- Persistance ---------------- */
   function load() {
@@ -78,6 +79,7 @@
 
   function render() {
     if (projection) { renderProjection(); return; }
+    if (poolSheetMode) { renderPoolSheet(); return; }
     if (sheetMode) { renderSheet(); return; }
     const c = cl();
     $('classSelect').innerHTML = db.classes.map(x => `<option value="${esc(x.id)}" ${x.id === db.active ? 'selected' : ''}>${esc(x.name)}</option>`).join('') || '<option value="">Aucune classe</option>';
@@ -377,6 +379,8 @@
         <label class="row small" style="gap:6px"><input type="checkbox" style="width:auto" data-action="proj-qr" ${s.projQr !== false ? 'checked' : ''}> QR codes des matchs en projection</label>
       </div>
       ${s.mode === 'reclass' && R.canBuildClassement(s).ok ? reclassChooser(c, s) : ''}
+      ${s.mode === 'pools' ? `<div class="notice pools-auto"><b>Poules en autonomie.</b> Chaque poule scanne son QR : la tablette affiche tous les matchs de la poule ; les élèves les jouent, saisissent les scores, puis présentent un seul QR de résultat au mode scan.
+        <div class="actions" style="margin-top:8px">${s.groups.map((g, gi) => `<button class="btn" data-action="qr-pool" data-group="${gi}">QR poule ${gi + 1} <span class="muted small">(${g.length} élèves · ${R.groupMatches(s, gi).filter(m => m.done).length}/${R.groupMatches(s, gi).length})</span></button>`).join('')}</div></div>` : ''}
       ${s.mode === 'swiss' && s.lastPairing && s.lastPairing.repeats ? `<div class="notice warn">${s.lastPairing.repeats} revanche(s) inévitable(s) dans cette ronde.</div>` : ''}
       ${s.mode === 'challenge' ? `<div class="row" style="margin-top:10px">
         <div class="field"><label for="challenger">Défiant</label><select id="challenger">${order.map((id, i) => `<option value="${id}">${i + 1}. ${esc(nameOf(c, id))}</option>`).join('')}</select></div>
@@ -605,7 +609,10 @@
       }
       html = `<header class="proj-head"><div>${esc(R.MODES[s.mode])}${roundInfo}</div><div class="proj-prog">${done} / ${s.matches.length} matchs</div></header>
         <div class="proj-courts">${courts.join('')}</div>
-        <h2>À suivre</h2>${queue.length ? `<ol class="proj-queue">${queue.map(m => `<li>${name(m.a)} – ${name(m.b)}</li>`).join('')}</ol>` : '<p class="proj-free">Aucun match en attente</p>'}
+        ${s.mode === 'pools' && s.projQr !== false && s.qrToken && publicBase() ? `<h2>QR des poules — jouez tous vos matchs puis présentez le résultat</h2><div class="proj-pools">${s.groups.map((g, gi) => {
+          const svg = qrSVG(poolSheetURL(c, s, gi), 170);
+          return `<div class="proj-pool">${svg ? `<div class="proj-qr">${svg}</div>` : ''}<div><div class="proj-t">Poule ${gi + 1}</div><div class="proj-pool-names">${g.map(name).join(' · ')}</div></div></div>`;
+        }).join('')}</div>` : `<h2>À suivre</h2>${queue.length ? `<ol class="proj-queue">${queue.map(m => `<li>${name(m.a)} – ${name(m.b)}</li>`).join('')}</ol>` : '<p class="proj-free">Aucun match en attente</p>'}`}
         ${extra}`;
     }
     $('view').innerHTML = html + `<div class="proj-tools"><button class="btn" data-action="proj-fullscreen">Plein écran (F)</button><button class="btn" data-action="proj-close">Fermer</button></div>`;
@@ -622,6 +629,101 @@
   function qrSVG(text, size) {
     if (!window.RacketQR) return null;
     try { return window.RacketQR.toSVG(text, size); } catch (e) { return null; }
+  }
+
+  function poolSheetURL(c, s, gi) { return publicBase() + '#p=' + R.encodeSheet(R.poolSheetData(c, s, gi)); }
+
+  function showQRForPool(gi) {
+    const c = cl(), s = R.activeSession(c);
+    if (!s || !s.groups || !s.groups[gi]) return;
+    if (!s.qrToken) { R.ensureQrToken(s); save(); }
+    const dlg = $('qrDialog'), base = publicBase();
+    const url = base ? poolSheetURL(c, s, gi) : '';
+    const svg = url ? qrSVG(url, 340) : null;
+    dlg.innerHTML = `<div class="qr-box"><h2 id="qrTitle">Poule ${gi + 1}</h2>
+      <p class="small">${s.groups[gi].map(id => esc(nameOf(c, id))).join(' · ')} — ${R.groupMatches(s, gi).length} matchs</p>
+      ${!base ? `<p class="bad">L'application est ouverte en fichier local : indiquez son adresse web (Réglages → QR codes) pour que les tablettes puissent ouvrir la feuille de poule.</p>`
+        : (svg ? `<div class="qr-img">${svg}</div><p class="muted small">La tablette affiche tous les matchs de la poule. Les élèves les jouent, saisissent les scores, puis présentent un seul QR de résultat au mode scan.</p>` : `<p class="bad">QR code impossible à générer.</p>`)}
+      ${url ? `<p class="small qr-link"><a href="${esc(url)}" target="_blank" rel="noopener">Ouvrir la feuille de poule</a></p>` : ''}
+      <div class="actions"><button class="btn primary" data-action="qr-close">Fermer</button></div></div>`;
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+  }
+
+  /* --- Feuille de poule sur la tablette (#p=…) : tous les matchs de la poule --- */
+  let pool = null;
+  function poolKey(d) { return 'racket_eps_poule_' + d.s + '_' + d.g; }
+  function loadPool() {
+    let d;
+    try { d = R.decodePoolSheet(location.hash.slice(3)); } catch (e) { return { error: e.message }; }
+    let st = { res: d.pairs.map(() => ({ sa: 0, sb: 0, forfeit: null, done: false })), finished: false };
+    try {
+      const saved = JSON.parse(localStorage.getItem(poolKey(d)) || 'null');
+      if (saved && Array.isArray(saved.res) && saved.res.length === d.pairs.length) st = saved;
+    } catch (e) { /* ignore */ }
+    return { d, st };
+  }
+  function savePool() { try { localStorage.setItem(poolKey(pool.d), JSON.stringify(pool.st)); } catch (e) { /* ignore */ } }
+  function poolResults() {
+    return pool.st.res.map(r => (!r.done ? null : (r.forfeit ? { forfeit: r.forfeit } : { sa: r.sa, sb: r.sb })));
+  }
+
+  function renderPoolSheet() {
+    document.body.classList.add('sheet-mode');
+    if (!pool) pool = loadPool();
+    if (pool.error) { $('view').innerHTML = `<section class="panel"><h2>Feuille de poule illisible</h2><p>${esc(pool.error)} Rescannez le QR code de la poule.</p></section>`; return; }
+    const { d, st } = pool;
+    const done = st.res.filter(r => r.done).length;
+    // Mini-classement en direct (victoires) pour motiver les élèves
+    const wins = d.p.map(() => 0);
+    st.res.forEach((r, i) => {
+      if (!r.done) return;
+      const [a, b] = d.pairs[i];
+      const aWins = r.forfeit ? r.forfeit === 'b' : r.sa > r.sb;
+      wins[aWins ? a : b]++;
+    });
+    const order = d.p.map((n, i) => ({ n, w: wins[i] })).sort((x, y) => y.w - x.w);
+    const head = `<div class="sheet-head">Séance ${esc(d.n)} · Poule ${d.g + 1} · score cible ${esc(d.t)}</div>`;
+    if (st.finished) {
+      let code = '', err = '';
+      try { code = R.poolResultCode(d, poolResults()); } catch (e) { err = e.message; }
+      const svg = code ? qrSVG(code, 300) : null;
+      $('view').innerHTML = `<section class="panel sheet">${head}<h2>Résultats de la poule à faire valider</h2>
+        ${err ? `<p class="bad">${esc(err)}</p>` : `${svg ? `<div class="qr-img">${svg}</div>` : ''}<p class="sheet-code" aria-label="Code de résultat de la poule">${esc(code)}</p>
+        <p class="muted">Présentez ce QR code au professeur (mode scan) : tous les résultats de la poule seront enregistrés d'un coup.</p>`}
+        <div class="tablewrap"><table><thead><tr><th>Match</th><th>Résultat</th></tr></thead><tbody>${d.pairs.map(([a, b], i) => {
+          const r = st.res[i];
+          const txt = !r.done ? 'non joué' : (r.forfeit ? 'forfait de ' + (r.forfeit === 'a' ? d.p[a] : d.p[b]) : r.sa + ' – ' + r.sb);
+          return `<tr><td>${esc(d.p[a])} – ${esc(d.p[b])}</td><td>${esc(txt)}</td></tr>`;
+        }).join('')}</tbody></table></div>
+        <button class="btn sheet-finish" data-action="pool-edit">Modifier des scores</button></section>`;
+      return;
+    }
+    const cards = d.pairs.map(([a, b], i) => {
+      const r = st.res[i];
+      if (r.done) {
+        const txt = r.forfeit ? 'Forfait de ' + (r.forfeit === 'a' ? d.p[a] : d.p[b]) : d.p[a] + ' ' + r.sa + ' – ' + r.sb + ' ' + d.p[b];
+        return `<div class="pool-match done"><div class="pm-head"><b>Match ${i + 1}</b><span class="badge pm-ok">✓ Terminé</span></div>
+          <div class="pm-result">${esc(txt)}</div>
+          <button class="btn" data-action="pool-reopen" data-i="${i}">Modifier</button></div>`;
+      }
+      const row = (side, idx, val) => `<div class="pm-row"><span class="pm-name">${esc(d.p[idx])}</span>
+        <span class="pm-score"><button class="btn pm-btn" data-action="pool-step" data-i="${i}" data-side="${side}" data-delta="-1" aria-label="Retirer un point à ${esc(d.p[idx])}">−</button>
+        <output aria-live="polite">${val}</output>
+        <button class="btn pm-btn primary" data-action="pool-step" data-i="${i}" data-side="${side}" data-delta="1" aria-label="Ajouter un point à ${esc(d.p[idx])}">+</button></span></div>`;
+      return `<div class="pool-match"><div class="pm-head"><b>Match ${i + 1}</b><span class="badge">À jouer</span></div>
+        ${row('a', a, r.sa)}${row('b', b, r.sb)}
+        <p class="bad pm-err" id="pmErr${i}" role="alert"></p>
+        <div class="actions"><button class="btn primary pm-validate" data-action="pool-validate" data-i="${i}">Valider ce match</button>
+        <details class="more"><summary>Forfait</summary><div class="actions">
+          <button class="btn" data-action="pool-forfeit" data-i="${i}" data-side="a">Forfait de ${esc(d.p[a])}</button>
+          <button class="btn" data-action="pool-forfeit" data-i="${i}" data-side="b">Forfait de ${esc(d.p[b])}</button></div></details></div></div>`;
+    }).join('');
+    $('view').innerHTML = `<section class="panel sheet pool-sheet">${head}
+      <div class="row between"><h2 style="margin:0">Tous les matchs de la poule</h2><span class="badge">${done} / ${d.pairs.length} terminés</span></div>
+      <div class="pool-rank" aria-label="Victoires dans la poule">${order.map(x => `<span class="bench-chip">${esc(x.n)} · ${x.w} V</span>`).join('')}</div>
+      <div class="pool-grid">${cards}</div>
+      <button class="btn primary sheet-finish" data-action="pool-finish" ${done ? '' : 'disabled'}>Terminer la poule et afficher le QR de résultat</button>
+      <p class="muted small">Les scores ne sont enregistrés qu'après le scan par le professeur. Cette page garde vos scores si elle se recharge.</p></section>`;
   }
 
   function showQRForMatch(id) {
@@ -767,6 +869,14 @@
   function handleScanned(text, force) {
     const c = cl(), s = c && R.activeSession(c);
     if (!scan.auto && !force) {
+      if (String(text).trim().toUpperCase().indexOf('RP1.') === 0) {
+        const pp = R.parsePoolResultCode(text);
+        if (!pp.ok) { scanStatus(pp.error, 'err'); beep(false); return; }
+        pendingScan = text;
+        scanResultCard(`<div class="notice">Poule ${pp.g + 1} : ${pp.items.filter(x => x !== '-').length} résultat(s) sur ${pp.items.length}<div class="actions"><button class="btn primary mini" data-action="scan-confirm">Enregistrer</button><button class="btn mini" data-action="scan-ignore">Ignorer</button></div></div>`);
+        scanStatus('Code de poule lu : vérifiez puis enregistrez.', '');
+        return;
+      }
       const p = R.parseResultCode(text);
       if (!p.ok) { scanStatus(p.error, 'err'); beep(false); return; }
       pendingScan = text;
@@ -775,17 +885,24 @@
       scanStatus('Code lu : vérifiez puis enregistrez.', '');
       return;
     }
-    let res = R.applyResultCode(c, s, text);
+    let res = R.applyAnyCode(c, s, text);
     if (!res.ok && res.needsConfirm) {
       if (!confirm(res.error)) { scanStatus('Résultat existant conservé.', ''); return; }
-      res = R.applyResultCode(c, s, text, { confirm: true });
+      res = R.applyAnyCode(c, s, text, { confirm: true });
     }
     if (!res.ok && res.needsConfirm) {
       // conséquences en aval (reclassement)
       if (!confirm(res.error + '\n\nConfirmer ?')) return;
-      res = R.applyResultCode(c, s, text, { confirm: true });
+      res = R.applyAnyCode(c, s, text, { confirm: true });
     }
     if (!res.ok) { scanStatus(res.error, 'err'); beep(false); return; }
+    if (res.kind === 'pool') {
+      if (!res.recorded) { scanStatus('Poule ' + (res.pool + 1) + ' : déjà enregistrée, rien ne change.', ''); return; }
+      save(); render(); beep(true);
+      scanStatus('✓ Poule ' + (res.pool + 1) + ' enregistrée', 'ok');
+      scanResultCard(`<div class="notice">✓ Poule ${res.pool + 1} : ${res.recorded} résultat(s) enregistré(s)${res.unchanged ? ', ' + res.unchanged + ' déjà saisi(s)' : ''}${res.skipped ? ', ' + res.skipped + ' non joué(s)' : ''}.</div>`);
+      return;
+    }
     if (res.already) { scanStatus('Déjà enregistré : ' + describeInput(c, res.match, res.input), ''); return; }
     save(); render();
     beep(true);
@@ -915,6 +1032,31 @@
       act(o => R.setCourtClosed(c, s, Number(el.dataset.court), closed, o), 'Terrain ' + el.dataset.court + (closed ? ' fermé' : ' rouvert'));
     },
     'qr-match': el => showQRForMatch(el.dataset.id),
+    'qr-pool': el => showQRForPool(Number(el.dataset.group)),
+    'pool-step': el => {
+      const r = pool.st.res[Number(el.dataset.i)], k = el.dataset.side === 'a' ? 'sa' : 'sb';
+      r[k] = Math.max(0, Math.min(999, r[k] + Number(el.dataset.delta)));
+      savePool(); renderPoolSheet();
+    },
+    'pool-validate': el => {
+      const i = Number(el.dataset.i), r = pool.st.res[i];
+      const err = R.validateScore(r.sa, r.sb);
+      if (err) { $('pmErr' + i).textContent = err; return; }
+      r.forfeit = null; r.done = true; savePool(); renderPoolSheet();
+    },
+    'pool-forfeit': el => {
+      const i = Number(el.dataset.i), [a, b] = pool.d.pairs[i];
+      const who = el.dataset.side === 'a' ? pool.d.p[a] : pool.d.p[b];
+      if (!confirm('Déclarer le forfait de ' + who + ' pour ce match ?')) return;
+      Object.assign(pool.st.res[i], { forfeit: el.dataset.side, done: true }); savePool(); renderPoolSheet();
+    },
+    'pool-reopen': el => { const r = pool.st.res[Number(el.dataset.i)]; r.done = false; r.forfeit = null; savePool(); renderPoolSheet(); },
+    'pool-finish': () => {
+      const left = pool.st.res.filter(r => !r.done).length;
+      if (left && !confirm(left + ' match(s) non joué(s) : ils ne seront pas transmis. Afficher quand même le QR de résultat ?')) return;
+      pool.st.finished = true; savePool(); renderPoolSheet(); window.scrollTo(0, 0);
+    },
+    'pool-edit': () => { pool.st.finished = false; savePool(); renderPoolSheet(); },
     'focus-match': el => {
       const input = $('a_' + el.dataset.id);
       if (!input) return;
