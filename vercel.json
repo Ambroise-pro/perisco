@@ -3,6 +3,6 @@
   "framework": null,
   "buildCommand": "",
   "installCommand": "",
-  "outputDirectory": ".",
+  "outputDirectory": "tournoi-eps",
   "cleanUrls": false
 }

@@ -1,4 +1,4 @@
-tests/
-tools/
-CLAUDE.md
-package.json
+tournoi-eps/tests/
+tournoi-eps/tools/
+tournoi-eps/CLAUDE.md
+tournoi-eps/package.json
