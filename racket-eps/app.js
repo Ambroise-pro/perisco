@@ -257,7 +257,7 @@
         ${ready ? `<details class="more"><summary>Autres actions</summary><div class="actions">
           <button class="btn" data-action="forfeit" data-id="${m.id}" data-loser="${m.a}">Forfait de ${esc(nameOf(c, m.a))}</button>
           <button class="btn" data-action="forfeit" data-id="${m.id}" data-loser="${m.b}">Forfait de ${esc(nameOf(c, m.b))}</button>
-          <button class="btn" data-action="qr-match" data-id="${m.id}">QR de la feuille de match</button>
+          <button class="btn" data-action="qr-match" data-id="${m.id}">${s.mode === 'pools' ? 'QR de la poule ' + (m.group + 1) : 'QR de la feuille de match'}</button>
           ${m.done ? `<button class="btn" data-action="clear" data-id="${m.id}">Effacer le résultat</button>` : ''}
           ${s.mode === 'challenge' && !m.done ? `<button class="btn danger" data-action="remove-match" data-id="${m.id}">Supprimer ce défi</button>` : ''}</div></details>` : ''}
       </div></div>`;
@@ -336,7 +336,7 @@
         <div class="cc-foot">
           <span class="muted small">${m ? esc(matchLabel(c, s, m)) : 'En attente du prochain match de la file'}</span>
           ${bench.length ? `<div class="cc-bench"><span class="small muted">Sur le banc</span>${bench.map(id => `<span class="bench-chip">${esc(nameOf(c, id))}</span>`).join('')}</div>` : ''}
-          <div class="actions">${m ? `<button class="btn primary" data-action="score-sheet" data-id="${m.id}">Saisir le score</button><button class="btn mini" data-action="qr-match" data-id="${m.id}" aria-label="QR code du match du terrain ${t}">QR</button>` : ''}
+          <div class="actions">${m ? `<button class="btn primary" data-action="score-sheet" data-id="${m.id}">Saisir le score</button><button class="btn mini" data-action="qr-match" data-id="${m.id}" aria-label="${s.mode === 'pools' ? 'QR code de la poule ' + (m.group + 1) : 'QR code du match du terrain ' + t}">${s.mode === 'pools' ? 'QR poule ' + (m.group + 1) : 'QR'}</button>` : ''}
           <button class="btn mini court-close" data-action="court-toggle" data-court="${t}" data-closed="1" aria-label="Fermer le terrain ${t}">Fermer</button></div>
         </div></div>`);
     }
@@ -468,7 +468,7 @@
         <details class="more ss-more"><summary class="btn">Plus…</summary><div class="actions">
           <button type="button" class="btn" data-action="ss-forfeit" data-loser="${m.a}">Forfait de ${esc(nameOf(c, m.a))}</button>
           <button type="button" class="btn" data-action="ss-forfeit" data-loser="${m.b}">Forfait de ${esc(nameOf(c, m.b))}</button>
-          <button type="button" class="btn" data-action="qr-match" data-id="${m.id}">QR de la feuille de match</button>
+          <button type="button" class="btn" data-action="qr-match" data-id="${m.id}">${s.mode === 'pools' ? 'QR de la poule ' + (m.group + 1) : 'QR de la feuille de match'}</button>
           ${m.done ? '<button type="button" class="btn danger" data-action="ss-clear">Effacer le résultat</button>' : ''}</div></details></div></div>`;
   }
 
@@ -733,7 +733,7 @@
       const courts = [];
       for (const t of R.availableCourts(c, s)) {
         const m = s.matches.find(x => x.court === t && !x.done);
-        const qr = m && s.projQr !== false && s.qrToken && publicBase() ? qrSVG(sheetURL(c, s, m), 150) : null;
+        const qr = m && s.projQr !== false && s.qrToken && publicBase() ? qrSVG(poolOf(s, m) != null ? poolSheetURL(c, s, m.group) : sheetURL(c, s, m), 150) : null;
         const bench = m ? benchFor(s, m) : [];
         courts.push(`<div class="proj-court ${m ? 'busy' : ''}"><div class="proj-row"><div class="proj-t">Terrain ${t}</div>${qr ? `<div class="proj-qr" aria-label="QR code de la feuille de match">${qr}</div>` : ''}</div>
           ${m ? courtDrawing(c, { left: [m.a], right: [m.b], state: 'playing', big: true }) : courtDrawing(c, { state: 'free', big: true })}
@@ -872,9 +872,13 @@
       <p class="muted small">Les scores ne sont enregistrés qu'après le scan par le professeur. Cette page garde vos scores si elle se recharge.</p></section>`;
   }
 
+  // En poules classiques, tous les QR (terrain, match, saisie, projection) ouvrent la feuille de la poule.
+  const poolOf = (s, m) => (s && s.mode === 'pools' && m && m.group != null && s.groups && s.groups[m.group] ? m.group : null);
+
   function showQRForMatch(id) {
     const c = cl(), s = R.activeSession(c), m = s && s.matches.find(x => x.id === id);
     if (!m) return;
+    if (poolOf(s, m) != null) { showQRForPool(m.group); return; }
     if (!s.qrToken) { R.ensureQrToken(s); save(); }
     const dlg = $('qrDialog');
     const base = publicBase();

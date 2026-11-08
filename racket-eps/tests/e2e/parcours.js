@@ -322,13 +322,24 @@ async function qrFlow(browser) {
   await page.click('[data-tab="session"]');
   await page.click('[data-action="create-session"]');
   await page.click('[data-action="start-session"]');
+  // En poules classiques, le QR d'un terrain ouvre la feuille de SA poule (tous les matchs), pas un seul match.
   await page.click('.court-card [data-action="qr-match"] >> nth=0');
   await page.waitForSelector('#qrDialog[open]');
-  const href = await page.getAttribute('#qrDialog .qr-link a', 'href');
-  check(href && href.startsWith(BASE + '#f='), 'QR du match : lien vers la feuille de match (' + href.length + ' caractères)');
-  check(await page.$('#qrDialog .qr-img svg') !== null, 'QR code de la feuille de match dessiné (générateur qr.js)');
-  if (process.env.QR_SHOTS) await page.locator('#qrDialog .qr-img').screenshot({ path: path.join(OUT, 'qr-feuille.png') });
+  const courtHref = await page.getAttribute('#qrDialog .qr-link a', 'href');
+  check(courtHref && courtHref.startsWith(BASE + '#p=') && /Poule/.test(await page.textContent('#qrTitle')), 'poules : le QR du terrain mène à la feuille de la poule (tous les matchs)');
+  check(await page.$('#qrDialog .qr-img svg') !== null, 'QR code dessiné (générateur qr.js)');
   await page.click('[data-action="qr-close"]');
+  await page.click('.match.st-playing [data-action="score-sheet"] >> nth=0');
+  await page.click('#scoreDialog .ss-more summary');
+  check(/QR de la poule/.test(await page.textContent('#scoreDialog .ss-more')), 'poules : le panneau de saisie propose le QR de la poule');
+  await page.click('#scoreDialog [data-action="ss-close"]');
+  // Feuille d'un seul match (utilisée par les autres formats) : lien construit comme dans l'application
+  const href = await page.evaluate(base => {
+    const R = window.RacketEngine, db = window.__racket.getDB(), c = db.classes[0], s = c.sessions.find(x => x.status !== 'closed');
+    const m = s.matches.find(x => x.court && !x.done);
+    return base + '#f=' + R.encodeSheet(R.sheetData(c, s, m));
+  }, BASE);
+  check(href.startsWith(BASE + '#f='), 'feuille d\'un seul match : lien (' + href.length + ' caractères)');
 
   // Tablette élève
   const tab = await browser.newContext(devices['iPad (gen 7)']);
