@@ -551,3 +551,35 @@ test('QR : codes refusés (faute de frappe, autre séance, inconnu, illisible)',
   const forged = R.resultCode(Object.assign({}, d, { k: 'aaaaaa' }), { sa: 11, sb: 0 });
   assert.match(R.applyResultCode(c, s, forged).error, /contrôle/);
 });
+
+test('Groupes de travail : serpentin équilibré, par niveau, absents exclus, effectifs à ±1', () => {
+  const ids = Array.from({ length: 10 }, (_, i) => 'r' + (i + 1));
+  // Serpentin : T1 T2 T3 | T3 T2 T1 | T1 T2 T3 | T3
+  assert.deepEqual(R.makeWorkGroups(ids, 3, 'balanced'), [['r1', 'r6', 'r7'], ['r2', 'r5', 'r8'], ['r3', 'r4', 'r9', 'r10']]);
+  assert.deepEqual(R.makeWorkGroups(ids, 3, 'level'), [['r1', 'r2', 'r3', 'r4'], ['r5', 'r6', 'r7'], ['r8', 'r9', 'r10']]);
+  assert.equal(R.makeWorkGroups(['a', 'b'], 6, 'balanced').length, 2, 'pas plus de groupes que d\'élèves');
+  for (const n of [5, 7, 12, 24, 25]) for (const k of [1, 2, 3, 6]) for (const mode of ['balanced', 'level']) {
+    const g = R.makeWorkGroups(Array.from({ length: n }, (_, i) => 'x' + i), k, mode);
+    const sizes = g.map(x => x.length);
+    assert.equal(sizes.reduce((a, b) => a + b, 0), n);
+    assert.equal(new Set(g.flat()).size, n);
+    assert.ok(Math.max(...sizes) - Math.min(...sizes) <= 1, `${n}/${k}/${mode}`);
+  }
+  // Sur une vraie classe : moyennes plus proches en serpentin qu'en groupes de niveau
+  const c = R.createDemoClass({ students: 24, sessions: 3, seed: 'groupes' });
+  const absent = [c.students[0].id];
+  assert.ok(R.buildWorkGroups(c, { courts: 4, mode: 'balanced', absent }).ok);
+  assert.ok(!c.workGroups.groups.flat().includes(absent[0]));
+  assert.equal(c.workGroups.groups.flat().length, 23);
+  const bal = R.workGroupStats(c).spread;
+  R.buildWorkGroups(c, { mode: 'level' });
+  const lvl = R.workGroupStats(c).spread;
+  assert.ok(bal < lvl / 3, `serpentin ${bal.toFixed(1)} vs niveau ${lvl.toFixed(1)}`);
+  assert.equal(c.workGroups.courts, 4, 'réglages conservés');
+  // Déplacement manuel, Elo inchangé
+  const before = R.ranks(c).map(p => p.elo);
+  const id = c.workGroups.groups[0][0];
+  assert.ok(R.moveWorkGroup(c, id, 3).ok);
+  assert.ok(c.workGroups.groups[3].includes(id));
+  assert.deepEqual(R.ranks(c).map(p => p.elo), before);
+});

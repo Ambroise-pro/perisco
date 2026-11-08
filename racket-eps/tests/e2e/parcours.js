@@ -134,7 +134,9 @@ async function scenario(browser, label, ctxOpts) {
   // Fiche élève
   await page.click('[data-tab="ranking"]');
   await page.screenshot({ path: path.join(OUT, label + '-4-classement.png'), fullPage: true });
-  check(/Évolution par séance/.test(await page.textContent('#view')), 'fiche élève avec évolution par séance');
+  await page.click('#view [data-action="student"] >> nth=0');
+  await page.waitForSelector('#studentDialog[open]');
+  check(/Évolution par séance/.test(await page.textContent('#studentDialog')), 'fiche élève ouverte dans une fenêtre (pop-up)');
   check(await page.$$eval('#eloChart circle', n => n.length) === 2 && await page.$$eval('#rankChart circle', n => n.length) === 2, 'graphiques Elo et rang : un point par séance clôturée');
   await page.hover('#eloChart svg', { position: { x: 30, y: 60 } });
   await page.waitForSelector('#eloChart .tip:not([hidden])');
@@ -142,7 +144,9 @@ async function scenario(browser, label, ctxOpts) {
   await page.focus('#rankChart');
   await page.keyboard.press('ArrowLeft');
   check(/Séance 1/.test(await page.textContent('#rankChart .tip')), 'graphique utilisable au clavier (flèches)');
-  await page.screenshot({ path: path.join(OUT, label + '-5-graphiques.png'), fullPage: true });
+  await page.screenshot({ path: path.join(OUT, label + '-5-graphiques.png'), fullPage: false });
+  await page.keyboard.press('Escape');
+  check(!(await page.$('#studentDialog[open]')), 'fiche fermée avec Échap');
 
   for (const t of ['dashboard', 'students', 'session', 'ranking', 'history', 'settings']) {
     await page.click(`[data-tab="${t}"]`);
@@ -192,7 +196,27 @@ async function demoClass(browser) {
   const info = await page.evaluate(() => { const c = window.__racket.getDB().classes[0]; return { n: c.students.length, s: c.sessions.length, demo: c.demo, closed: c.sessions.every(x => x.status === 'closed') }; });
   check(info.demo && info.n === 24 && info.s === 4 && info.closed, 'classe exemple : 24 élèves fictifs, 4 séances simulées clôturées');
   check(/données fictives/.test(await page.innerText('#view')), 'classe signalée comme fictive');
-  check(await page.$$eval('#eloChart circle', n => n.length) === 4, 'graphiques alimentés par les séances simulées');
+  await page.click('#view [data-action="student"] >> nth=0');
+  await page.waitForSelector('#studentDialog[open]');
+  check(await page.$$eval('#studentDialog #eloChart circle', n => n.length) === 4, 'fiche en pop-up : graphiques alimentés par les séances simulées');
+  await page.click('[data-action="student-close"]');
+
+  // Groupes de travail
+  await page.click('[data-tab="groups"]');
+  await page.click('[data-action="wg-courts"][data-delta="-1"]');
+  await page.click('[data-action="wg-courts"][data-delta="-1"]');
+  await page.click('#view details summary');
+  await page.check('input[data-action="wg-absent"] >> nth=0');
+  const wg = await page.evaluate(() => { const c = window.__racket.getDB().classes[0]; return { courts: c.workGroups.courts, sizes: c.workGroups.groups.map(g => g.length), spread: window.RacketEngine.workGroupStats(c).spread }; });
+  check(wg.courts === 4 && wg.sizes.reduce((a, b) => a + b, 0) === 23 && Math.max(...wg.sizes) - Math.min(...wg.sizes) <= 1, 'groupes de travail : 23 présents sur 4 terrains (' + wg.sizes.join('+') + ')');
+  await page.selectOption('#wgMode', 'level');
+  const lvl = await page.evaluate(() => window.RacketEngine.workGroupStats(window.__racket.getDB().classes[0]).spread);
+  check(wg.spread < lvl, 'répartition équilibrée : écart des moyennes ' + wg.spread.toFixed(0) + ' contre ' + lvl.toFixed(0) + ' par niveau');
+  await page.selectOption('#wgMode', 'balanced');
+  await page.screenshot({ path: path.join(OUT, 'groupes-de-travail.png'), fullPage: true });
+  await page.click('#view .court [data-action="student"] >> nth=0');
+  check(!!(await page.$('#studentDialog[open]')), 'fiche accessible depuis les groupes de travail');
+  await page.keyboard.press('Escape');
   await page.screenshot({ path: path.join(OUT, 'exemple-classement.png'), fullPage: true });
   await page.click('[data-tab="session"]');
   await page.click('[data-action="create-session"]');

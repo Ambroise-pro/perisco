@@ -9,7 +9,7 @@
   const KEY_BAD = 'racket_eps_v1_illisible';
 
   let db = null;
-  let tab = 'dashboard', selectedStudent = null, storageError = null, partitionKey = null;
+  let tab = 'dashboard', storageError = null, partitionKey = null;
   const projection = location.hash === '#projection';
   const sheetMode = location.hash.indexOf('#f=') === 0;
 
@@ -74,7 +74,7 @@
   }
 
   /* ---------------- Rendu ---------------- */
-  const TABS = [['dashboard', 'Tableau de bord'], ['students', 'Élèves'], ['session', 'Séance'], ['ranking', 'Classement Elo'], ['history', 'Historique'], ['settings', 'Réglages']];
+  const TABS = [['dashboard', 'Tableau de bord'], ['students', 'Élèves'], ['session', 'Séance'], ['groups', 'Groupes de travail'], ['ranking', 'Classement Elo'], ['history', 'Historique'], ['settings', 'Réglages']];
 
   function render() {
     if (projection) { renderProjection(); return; }
@@ -83,7 +83,7 @@
     $('classSelect').innerHTML = db.classes.map(x => `<option value="${esc(x.id)}" ${x.id === db.active ? 'selected' : ''}>${esc(x.name)}</option>`).join('') || '<option value="">Aucune classe</option>';
     $('nav').innerHTML = TABS.map(([id, t]) => `<button type="button" class="${tab === id ? 'active' : ''}" aria-current="${tab === id ? 'page' : 'false'}" data-action="tab" data-tab="${id}">${t}</button>`).join('');
     $('banner').innerHTML = storageError ? `<div class="notice warn" role="alert">${esc(storageError)} <button class="btn" data-action="export-json">Exporter</button></div>` : '';
-    const views = { dashboard, students, session, ranking, history, settings };
+    const views = { dashboard, students, session, groups: groupsView, ranking, history, settings };
     $('view').innerHTML = !c ? welcome() : (views[tab] || dashboard)(c);
   }
 
@@ -123,7 +123,7 @@
       <button class="btn" data-action="bulk-students">Importer les noms</button>
       <p class="muted small">Les doublons (majuscules et accents ignorés) sont refusés. Les noms restent dans ce navigateur : évitez les données nominatives sur un appareil partagé.</p></section>
       <section class="panel"><h2>Liste (${c.students.length})</h2>${
-        c.students.map((p, i) => `<div class="row between listrow"><span>${i + 1}. ${esc(p.name)} <span class="muted small">· Elo ${fmt(st[p.id].elo)} · ${st[p.id].absences} absence(s)</span></span><button class="btn" data-action="rename" data-id="${p.id}">Renommer</button></div>`).join('') || '<div class="empty">Aucun élève</div>'
+        c.students.map((p, i) => `<div class="row between listrow"><span>${i + 1}. <button class="btn linkish" data-action="student" data-id="${p.id}">${esc(p.name)}</button> <span class="muted small">· Elo ${fmt(st[p.id].elo)} · ${st[p.id].absences} absence(s)</span></span><button class="btn" data-action="rename" data-id="${p.id}">Renommer</button></div>`).join('') || '<div class="empty">Aucun élève</div>'
       }</section>`;
   }
 
@@ -341,26 +341,77 @@
   }
 
   /* ---------------- Classement et fiche ---------------- */
+  function ficheHTML(c, p) {
+    const closed = c.sessions.filter(s => s.status === 'closed');
+    const ms = closed.flatMap(s => s.matches.map(m => Object.assign({ seq: s.seq }, m))).filter(m => m.done && (m.a === p.id || m.b === p.id));
+    const rank = R.ranks(c).findIndex(x => x.id === p.id) + 1;
+    return `<div class="dlg-head"><h2 id="studentTitle">Fiche individuelle · ${esc(p.name)}</h2><button class="btn mini" data-action="student-close" aria-label="Fermer la fiche">✕</button></div>
+      <div class="grid"><div class="stat"><b>${fmt(p.elo)}</b><small>Elo actuel · ${rank}ᵉ / ${c.students.length}</small></div><div class="stat"><b>${p.wins} / ${p.played}</b><small>Matchs gagnés${p.played ? ' (' + fmt(p.wins / p.played * 100) + ' %)' : ''}</small></div>
+      <div class="stat"><b>${p.for} / ${p.against}</b><small>Points marqués / encaissés</small></div><div class="stat"><b>${p.opponents.size}</b><small>Adversaires différents</small></div><div class="stat"><b>${p.absences}</b><small>Absences</small></div></div>
+      <h3 style="margin-top:20px">Évolution de l'Elo</h3>
+      ${lineChart({ id: 'eloChart', points: p.history.map(h => ({ v: h.elo, x: 'S' + h.seq, label: 'Séance ' + h.seq + (h.date ? ' · ' + h.date : '') + (h.absent ? ' · absent' : ''), hollow: h.absent })), baseline: Number.isFinite(c.initialElo) ? c.initialElo : 1000, baselineLabel: 'Elo initial', fmtVal: v => fmt(v), name: 'Elo' })}
+      <h3 style="margin-top:20px">Évolution du rang dans la classe</h3>
+      ${lineChart({ id: 'rankChart', points: p.history.map(h => ({ v: h.rank, x: 'S' + h.seq, label: 'Séance ' + h.seq + (h.date ? ' · ' + h.date : '') + (h.absent ? ' · absent' : ''), hollow: h.absent })), invert: true, integer: true, min: 1, max: c.students.length, fmtVal: v => v + 'ᵉ / ' + c.students.length, name: 'Rang' })}
+      <h3 style="margin-top:20px">Évolution par séance (tableau)</h3><div class="tablewrap"><table><tr><th>Séance</th><th>Date</th><th>Variation</th><th>Elo final</th><th>Rang</th></tr>${
+        p.history.map(h => `<tr><td>${h.seq}</td><td>${esc(h.date || '')}</td><td class="${h.delta >= 0 ? 'good' : 'bad'}">${h.absent ? 'absent' : (h.delta >= 0 ? '+' : '') + fmt(h.delta)}</td><td>${fmt(h.elo)}</td><td>${h.rank}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Aucune séance clôturée</td></tr>'}</table></div>
+      <h3 style="margin-top:20px">Matchs</h3><div class="tablewrap"><table><tr><th>Séance</th><th>Adversaire</th><th>Score</th><th>Résultat</th></tr>${
+        ms.map(m => { const me = m.a === p.id; const opp = me ? m.b : m.a; const won = R.winnerOf(m) === p.id;
+          return `<tr><td>${m.seq}</td><td>${esc(nameOf(c, opp))}</td><td>${m.forfeit ? 'forfait' : (me ? m.sa + ' – ' + m.sb : m.sb + ' – ' + m.sa)}</td><td class="${won ? 'good' : 'bad'}">${won ? 'Victoire' : 'Défaite'}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">Aucun match dans les séances clôturées</td></tr>'}</table></div>`;
+  }
+
+  let ficheOpener = null;
+  function openFiche(id) {
+    const c = cl(), st = R.computeStats(c), p = st[id];
+    if (!p) return;
+    const dlg = $('studentDialog');
+    ficheOpener = document.activeElement;
+    dlg.innerHTML = `<div class="dlg-body">${ficheHTML(c, p)}</div>`;
+    if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', ''); }
+    const close = dlg.querySelector('[data-action="student-close"]');
+    if (close) close.focus();
+  }
+  function closeFiche() {
+    const dlg = $('studentDialog');
+    if (dlg.open) { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); }
+  }
+
   function ranking(c) {
-    const r = R.ranks(c), p = r.find(x => x.id === selectedStudent) || r[0];
-    let fiche = '';
-    if (p) {
-      const closed = c.sessions.filter(s => s.status === 'closed');
-      const ms = closed.flatMap(s => s.matches.map(m => Object.assign({ seq: s.seq }, m))).filter(m => m.done && (m.a === p.id || m.b === p.id));
-      fiche = `<section class="panel"><h2>Fiche individuelle · ${esc(p.name)}</h2>
-        <div class="grid"><div class="stat"><b>${fmt(p.elo)}</b><small>Elo actuel</small></div><div class="stat"><b>${p.wins} / ${p.played}</b><small>Matchs gagnés${p.played ? ' (' + fmt(p.wins / p.played * 100) + ' %)' : ''}</small></div>
-        <div class="stat"><b>${p.for} / ${p.against}</b><small>Points marqués / encaissés</small></div><div class="stat"><b>${p.opponents.size}</b><small>Adversaires différents</small></div><div class="stat"><b>${p.absences}</b><small>Absences</small></div></div>
-        <h3 style="margin-top:20px">Évolution de l'Elo</h3>
-        ${lineChart({ id: 'eloChart', points: p.history.map(h => ({ v: h.elo, x: 'S' + h.seq, label: 'Séance ' + h.seq + (h.date ? ' · ' + h.date : '') + (h.absent ? ' · absent' : ''), hollow: h.absent })), baseline: Number.isFinite(c.initialElo) ? c.initialElo : 1000, baselineLabel: 'Elo initial', fmtVal: v => fmt(v), name: 'Elo' })}
-        <h3 style="margin-top:20px">Évolution du rang dans la classe</h3>
-        ${lineChart({ id: 'rankChart', points: p.history.map(h => ({ v: h.rank, x: 'S' + h.seq, label: 'Séance ' + h.seq + (h.date ? ' · ' + h.date : '') + (h.absent ? ' · absent' : ''), hollow: h.absent })), invert: true, integer: true, min: 1, max: c.students.length, fmtVal: v => v + 'ᵉ / ' + c.students.length, name: 'Rang' })}
-        <h3 style="margin-top:20px">Évolution par séance (tableau)</h3><div class="tablewrap"><table><tr><th>Séance</th><th>Date</th><th>Variation</th><th>Elo final</th><th>Rang</th></tr>${
-          p.history.map(h => `<tr><td>${h.seq}</td><td>${esc(h.date || '')}</td><td class="${h.delta >= 0 ? 'good' : 'bad'}">${h.absent ? 'absent' : (h.delta >= 0 ? '+' : '') + fmt(h.delta)}</td><td>${fmt(h.elo)}</td><td>${h.rank}</td></tr>`).join('')}</table></div>
-        <h3 style="margin-top:20px">Matchs</h3><div class="tablewrap"><table><tr><th>Séance</th><th>Adversaire</th><th>Score</th><th>Résultat</th></tr>${
-          ms.map(m => { const me = m.a === p.id; const opp = me ? m.b : m.a; const won = R.winnerOf(m) === p.id;
-            return `<tr><td>${m.seq}</td><td>${esc(nameOf(c, opp))}</td><td>${m.forfeit ? 'forfait' : (me ? m.sa + ' – ' + m.sb : m.sb + ' – ' + m.sa)}</td><td class="${won ? 'good' : 'bad'}">${won ? 'Victoire' : 'Défaite'}</td></tr>`; }).join('')}</table></div></section>`;
+    const r = R.ranks(c);
+    return `${demoNotice(c)}<section class="panel"><h2>Classement général Elo</h2>${rankingTable(r, { note: 'Touchez le nom d\'un élève pour ouvrir sa fiche. Calculé uniquement à partir des séances clôturées, dans l\'ordre chronologique. Égalités départagées par ordre alphabétique (affiché de façon stable). Variation = dernière séance clôturée. Les forfaits et exemptions ne comptent pas pour l\'Elo.' })}</section>`;
+  }
+
+  /* ---------------- Groupes de travail (hors séance) ---------------- */
+  function groupsView(c) {
+    const wg = c.workGroups;
+    const courts = wg ? wg.courts : c.courts;
+    const mode = wg ? wg.mode : 'balanced';
+    const absent = wg ? wg.absent : [];
+    const ranked = R.ranks(c);
+    const rankOf = new Map(ranked.map((p, i) => [p.id, i + 1]));
+    const st = R.computeStats(c);
+    let result = '<div class="empty">Choisissez le nombre de terrains puis « Répartir ».</div>';
+    if (wg && wg.groups.length) {
+      const stats = R.workGroupStats(c);
+      result = `<div class="grid">${wg.groups.map((g, i) => `<div class="court"><h3>Terrain ${i + 1}</h3>
+          <div class="muted small">${g.length} élève(s) · Elo moyen ${fmt(stats.groups[i].avg)}</div>
+          ${g.slice().sort((x, y) => rankOf.get(x) - rankOf.get(y)).map(id => `<div class="player"><button class="btn linkish" data-action="student" data-id="${id}">${rankOf.get(id)}. ${esc(nameOf(c, id))}</button>
+            <label class="sr-only" for="wg_${id}">Terrain de ${esc(nameOf(c, id))}</label><select id="wg_${id}" data-action="wg-move" data-id="${id}">${wg.groups.map((_, j) => `<option value="${j}" ${j === i ? 'selected' : ''}>T${j + 1}</option>`).join('')}</select></div>`).join('')}</div>`).join('')}</div>
+        <p class="muted small">Écart entre l'Elo moyen le plus haut et le plus bas : <b>${fmt(stats.spread)}</b>${mode === 'balanced' ? ' (plus il est faible, plus les terrains sont de niveau comparable)' : ''}. Les déplacements manuels sont conservés jusqu'à la prochaine répartition. Les groupes ne modifient jamais l'Elo.</p>`;
     }
-    return `${demoNotice(c)}<section class="panel"><h2>Classement général Elo</h2>${rankingTable(r, { note: 'Calculé uniquement à partir des séances clôturées, dans l\'ordre chronologique. Égalités départagées par ordre alphabétique (affiché de façon stable). Variation = dernière séance clôturée. Les forfaits et exemptions ne comptent pas pour l\'Elo.' })}</section>${fiche}`;
+    return `${demoNotice(c)}<section class="panel"><h2>Groupes de travail</h2>
+      <p class="muted">Répartit les élèves présents sur les terrains disponibles selon le classement Elo, sans créer de séance.</p>
+      <div class="row">
+        <div class="field" style="flex:0 0 auto"><span class="small"><b>Terrains disponibles</b></span>
+          <div class="row" style="gap:8px"><button class="btn mini" data-action="wg-courts" data-delta="-1" aria-label="Un terrain de moins" ${courts <= 1 ? 'disabled' : ''}>−</button><b class="courts-count" aria-live="polite">${courts}</b><button class="btn mini" data-action="wg-courts" data-delta="1" aria-label="Un terrain de plus" ${courts >= 30 ? 'disabled' : ''}>+</button></div></div>
+        <div class="field"><label for="wgMode">Répartition</label><select id="wgMode" data-action="wg-mode">
+          <option value="balanced" ${mode === 'balanced' ? 'selected' : ''}>Équilibrée : même niveau moyen sur chaque terrain (serpentin)</option>
+          <option value="level" ${mode === 'level' ? 'selected' : ''}>Par niveau : les mieux classés au terrain 1</option></select></div>
+      </div>
+      <details ${absent.length ? 'open' : ''}><summary>Appel (${ranked.length - absent.length} présent(s) / ${ranked.length})</summary><div class="grid" style="margin-top:8px">${
+        ranked.map(p => `<label class="player"><span>${rankOf.get(p.id)}. ${esc(p.name)} · Elo ${fmt(st[p.id].elo)}</span><span><input type="checkbox" style="width:auto" data-action="wg-absent" data-id="${p.id}" ${absent.includes(p.id) ? 'checked' : ''}> Absent</span></label>`).join('')}</div></details>
+      <div class="actions" style="margin-top:12px"><button class="btn primary" data-action="wg-build">${wg ? 'Répartir à nouveau' : 'Répartir'}</button>${wg ? '<button class="btn" data-action="print">Imprimer</button>' : ''}</div>
+      <p class="muted small">Serpentin : 1ᵉʳ → T1, 2ᵉ → T2 … dernier terrain, puis retour en sens inverse, etc. Les effectifs diffèrent au plus d'un élève.</p></section>
+      <section class="panel"><h2>Répartition</h2>${result}</section>`;
   }
 
   function history(c) {
@@ -708,7 +759,14 @@
   /* ---------------- Actions ---------------- */
   const handlers = {
     'tab': el => { tab = el.dataset.tab; render(); window.scrollTo(0, 0); },
-    'student': el => { selectedStudent = el.dataset.id; tab = 'ranking'; render(); },
+    'student': el => openFiche(el.dataset.id),
+    'student-close': () => closeFiche(),
+    'wg-courts': el => {
+      const c = cl(), cur = c.workGroups ? c.workGroups.courts : c.courts;
+      act(() => R.buildWorkGroups(c, { courts: cur + Number(el.dataset.delta) }));
+    },
+    'wg-build': () => act(() => R.buildWorkGroups(cl(), {}), 'Élèves répartis'),
+    'print': () => window.print(),
     'add-class': () => {
       const name = prompt('Nom de la classe (ex. 3e B)');
       if (!name || !name.trim()) return;
@@ -724,7 +782,7 @@
       const nn = Number(n), kk = Number(k);
       if (!(Number.isInteger(nn) && nn >= 4 && nn <= 40) || !(Number.isInteger(kk) && kk >= 0 && kk <= 12)) return toast('Valeurs invalides (4 à 40 élèves, 0 à 12 séances).', true);
       const c = R.createDemoClass({ students: nn, sessions: kk, seed: 'exemple-' + Date.now(), name: 'Classe exemple (fictive)' + (db.classes.some(x => x.demo) ? ' ' + (db.classes.filter(x => x.demo).length + 1) : '') });
-      db.classes.push(c); db.active = c.id; tab = kk ? 'ranking' : 'dashboard'; selectedStudent = null;
+      db.classes.push(c); db.active = c.id; tab = kk ? 'ranking' : 'dashboard';
       save(); render();
       toast('Classe exemple créée : ' + nn + ' élèves fictifs' + (kk ? ', ' + kk + ' séance(s) simulée(s)' : ''));
     },
@@ -884,6 +942,14 @@
     if (el.id === 'importFile') { importJSON(el); return; }
     const c = cl();
     if (el.dataset.action === 'absent') { const s = R.activeSession(c); act(() => R.setAbsent(c, s, el.dataset.id, el.checked)); return; }
+    if (el.dataset.action === 'wg-mode') { act(() => R.buildWorkGroups(c, { mode: el.value })); return; }
+    if (el.dataset.action === 'wg-absent') {
+      const prev = c.workGroups ? c.workGroups.absent : [];
+      const absent = prev.filter(x => x !== el.dataset.id).concat(el.checked ? [el.dataset.id] : []);
+      act(() => R.buildWorkGroups(c, { absent }));
+      return;
+    }
+    if (el.dataset.action === 'wg-move') { act(() => R.moveWorkGroup(c, el.dataset.id, Number(el.value))); return; }
     if (el.dataset.action === 'proj-qr') { const s = R.activeSession(c); s.projQr = el.checked; save(); return; }
     if (el.dataset.action === 'scan-auto') { scan.auto = el.checked; return; }
     if (el.dataset.action === 'proj-standings') { const s = R.activeSession(c); s.projShowStandings = el.checked; save(); return; }
@@ -902,6 +968,9 @@
     const m = e.target.id && e.target.id.match(/^[ab]_(.+)$/);
     if (m) handlers.record({ dataset: { id: m[1] } });
   });
+
+  $('studentDialog').addEventListener('click', e => { if (e.target.id === 'studentDialog') closeFiche(); });
+  $('studentDialog').addEventListener('close', () => { if (ficheOpener && ficheOpener.focus && document.contains(ficheOpener)) ficheOpener.focus(); ficheOpener = null; });
 
   document.addEventListener('submit', e => {
     if (e.target.dataset && e.target.dataset.form === 'scan-code') {

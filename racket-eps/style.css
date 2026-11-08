@@ -146,3 +146,12 @@ body.sheet-mode .top,body.sheet-mode .nav,body.sheet-mode footer,body.sheet-mode
 .scan-status.warn{color:#f5c04a}
 .scan-form input{flex:1;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace}
 .scan-result .notice{margin:0}
+/* Fiche élève en fenêtre */
+#studentDialog{border:0;border-radius:16px;padding:0;background:#102436;color:#e8f0f7;width:min(920px,calc(100vw - 16px));max-height:calc(100vh - 24px)}
+#studentDialog::backdrop{background:rgba(0,0,0,.6)}
+.dlg-body{padding:18px}
+.dlg-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
+.dlg-head h2{margin:0}
+@media print{#studentDialog,#qrDialog{display:none}}
+.player .btn.linkish{color:#163342;min-height:32px;font-weight:600}
+.court .muted{color:#dbe9f0}

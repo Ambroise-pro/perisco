@@ -994,6 +994,61 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * Groupes de travail (hors séance) : répartition des présents sur N terrains
+   * ------------------------------------------------------------------ *
+   * À partir du classement Elo (meilleur en premier) :
+   *  - 'balanced' (équilibrés) : distribution en serpentin — T1, T2, …, Tn puis Tn, …, T1 — pour
+   *    que chaque terrain ait un niveau moyen proche ;
+   *  - 'level' (par niveau) : blocs consécutifs — les meilleurs au terrain 1.
+   * Les effectifs par terrain diffèrent au plus d'un élève. N'affecte jamais l'Elo.
+   */
+  function makeWorkGroups(rankedIds, courts, mode) {
+    const n = rankedIds.length;
+    const k = Math.max(1, Math.min(Math.floor(courts) || 1, n || 1));
+    if (mode === 'level') return balancedGroups(rankedIds, k);
+    const groups = Array.from({ length: k }, () => []);
+    rankedIds.forEach((id, i) => {
+      const pass = Math.floor(i / k), pos = i % k;
+      groups[pass % 2 === 0 ? pos : k - 1 - pos].push(id);
+    });
+    return groups.filter(g => g.length);
+  }
+
+  /** Crée ou recalcule les groupes de travail de la classe (c.workGroups). */
+  function buildWorkGroups(c, opts) {
+    opts = opts || {};
+    const prev = c.workGroups || {};
+    const courts = clampInt(opts.courts != null ? opts.courts : prev.courts, 1, 30, c.courts || 4);
+    const mode = (opts.mode || prev.mode) === 'level' ? 'level' : 'balanced';
+    const absent = (opts.absent || prev.absent || []).filter(id => c.students.some(p => p.id === id));
+    const ranked = ranks(c).filter(p => !absent.includes(p.id)).map(p => p.id);
+    if (!ranked.length) return fail('Aucun élève présent.');
+    c.workGroups = { courts, mode, absent, groups: makeWorkGroups(ranked, courts, mode), createdAt: Date.now() };
+    return { ok: true };
+  }
+
+  function moveWorkGroup(c, id, to) {
+    const wg = c.workGroups;
+    if (!wg) return fail('Aucun groupe de travail.');
+    const from = wg.groups.findIndex(g => g.includes(id));
+    if (from < 0 || to < 0 || to >= wg.groups.length) return fail('Déplacement impossible.');
+    if (from === to) return { ok: true };
+    wg.groups[from] = wg.groups[from].filter(x => x !== id);
+    wg.groups[to].push(id);
+    return { ok: true };
+  }
+
+  /** Statistiques par groupe : effectif, Elo moyen ; écart entre la moyenne la plus haute et la plus basse. */
+  function workGroupStats(c) {
+    const wg = c.workGroups;
+    if (!wg) return null;
+    const st = computeStats(c);
+    const groups = wg.groups.map(g => ({ size: g.length, avg: g.length ? g.reduce((a, id) => a + (st[id] ? st[id].elo : 0), 0) / g.length : 0 }));
+    const avgs = groups.filter(g => g.size).map(g => g.avg);
+    return { groups, spread: avgs.length ? Math.max(...avgs) - Math.min(...avgs) : 0 };
+  }
+
+  /* ------------------------------------------------------------------ *
    * QR codes : aller-retour hors ligne entre tablettes élèves et appareil enseignant
    * ------------------------------------------------------------------ *
    * Les données restent sur l'appareil de l'enseignant (aucun serveur). Le QR d'un match ouvre
@@ -1277,6 +1332,7 @@
     divisionFormat, validatePartition, describePartition, proposePartitions, seedOrder, brassageRanking,
     canBuildClassement, buildClassement, reclassPlaces,
     canClose, closeSession, cancelSession, reopenSession,
+    makeWorkGroups, buildWorkGroups, moveWorkGroup, workGroupStats,
     shortHash, shortId, ensureQrToken, sheetData, encodeSheet, decodeSheet, resultCode, parseResultCode, applyResultCode,
     emptyDB, migrate, validateDB, parseDB, addStudents, renameStudent, nameKey, createDemoClass, DEMO_NAMES
   };

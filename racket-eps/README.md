@@ -37,6 +37,16 @@ tests/       tests du moteur (node --test) et parcours navigateur (Playwright)
 | Ronde suisse | Appariement exact de coût minimal (revanches évitées quand c'est possible). L'exemption va en priorité à un élève qui n'en a pas eu, avec 1 point de tournoi et 0 Elo. |
 | Reclassement | Brassage en poules, puis divisions en **tableaux intégraux** (2, 4, 8, 16…) ou en poules de 3, 5 ou 6. Chaque place est attribuée une fois. Corriger un match en amont invalide les matchs en aval, après confirmation. |
 
+## Groupes de travail
+L'onglet **Groupes de travail** répartit les élèves présents sur un nombre de terrains choisi (− / +), sans créer de séance et sans toucher à l'Elo :
+- **Équilibrée** (par défaut) : distribution en serpentin selon le classement Elo (1ᵉʳ → T1, 2ᵉ → T2 … dernier terrain, puis retour). Chaque terrain a un niveau moyen comparable, et l'écart entre les moyennes est affiché.
+- **Par niveau** : les mieux classés au terrain 1, puis les suivants, etc.
+
+Les effectifs diffèrent au plus d'un élève. Un appel permet d'exclure les absents. On peut déplacer un élève à la main ; ces déplacements sont conservés jusqu'à la prochaine répartition. Les groupes sont mémorisés avec la classe et peuvent être imprimés.
+
+## Fiche élève
+La fiche s'ouvre dans une **fenêtre** (pop-up) quand on touche le nom d'un élève, depuis le classement, la liste des élèves ou les groupes de travail. Elle se ferme avec ✕, avec la touche Échap ou en touchant le fond.
+
 ## QR codes : autonomie des élèves sur tablette
 Les données restent **sur l'appareil de l'enseignant**, sans serveur. Les résultats passent donc par un aller-retour de QR codes :
 1. **QR du match.** Il s'affiche sur l'appareil de l'enseignant (bouton « QR » d'un terrain, ou « QR de la feuille de match » dans les actions d'un match) et, si la case est cochée, sur chaque terrain en **projection**.
