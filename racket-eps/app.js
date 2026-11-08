@@ -75,7 +75,12 @@
   }
 
   /* ---------------- Rendu ---------------- */
-  const TABS = [['dashboard', 'Tableau de bord'], ['students', 'Élèves'], ['session', 'Séance'], ['groups', 'Groupes de travail'], ['ranking', 'Classement Elo'], ['history', 'Historique'], ['settings', 'Réglages']];
+  // Barre du bas (portée du pouce sur tablette) ; Historique et Réglages sont dans l'en-tête.
+  const TABS = [['dashboard', 'Accueil', 'home'], ['session', 'Séance', 'court'], ['groups', 'Groupes', 'groups'], ['ranking', 'Classement', 'rank'], ['students', 'Élèves', 'student']];
+  const ICONS = {"home": "<path d=\"M3 11l9-7 9 7\"/><path d=\"M5 10v10h14V10\"/>", "court": "<rect x=\"3\" y=\"5\" width=\"18\" height=\"14\" rx=\"1.5\"/><path d=\"M12 5v14\"/>", "groups": "<circle cx=\"7\" cy=\"8\" r=\"3\"/><circle cx=\"17\" cy=\"8\" r=\"3\"/><path d=\"M2 20a5 5 0 0 1 10 0\"/><path d=\"M12 20a5 5 0 0 1 10 0\"/>", "rank": "<path d=\"M4 20V10\"/><path d=\"M10 20V4\"/><path d=\"M16 20v-7\"/><path d=\"M22 20H2\"/>", "student": "<circle cx=\"12\" cy=\"8\" r=\"3.5\"/><path d=\"M5 20a7 7 0 0 1 14 0\"/>"};
+  const icon = (k, size) => `<svg width="${size || 30}" height="${size || 30}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ''}</svg>`;
+  // Brouillon de la nouvelle séance (réglé au toucher, sans clavier)
+  const draft = { mode: 'pools', rounds: 4, target: 11, groupSize: 4, ladderType: 'group', move: 1, gap: 3, legs: 1, permutation: 'swap', tiebreak: 'h2h-diff-pf' };
 
   function render() {
     if (projection) { renderProjection(); return; }
@@ -83,7 +88,8 @@
     if (sheetMode) { renderSheet(); return; }
     const c = cl();
     $('classSelect').innerHTML = db.classes.map(x => `<option value="${esc(x.id)}" ${x.id === db.active ? 'selected' : ''}>${esc(x.name)}</option>`).join('') || '<option value="">Aucune classe</option>';
-    $('nav').innerHTML = TABS.map(([id, t]) => `<button type="button" class="${tab === id ? 'active' : ''}" aria-current="${tab === id ? 'page' : 'false'}" data-action="tab" data-tab="${id}">${t}</button>`).join('');
+    $('nav').innerHTML = TABS.map(([id, t, ic]) => `<button type="button" class="tab-btn ${tab === id ? 'active' : ''}" aria-current="${tab === id ? 'page' : 'false'}" data-action="tab" data-tab="${id}">${icon(ic)}<span>${t}</span></button>`).join('');
+    document.querySelectorAll('.top [data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     $('banner').innerHTML = storageError ? `<div class="notice warn" role="alert">${esc(storageError)} <button class="btn" data-action="export-json">Exporter</button></div>` : '';
     const views = { dashboard, students, session, groups: groupsView, ranking, history, settings };
     $('view').innerHTML = !c ? welcome() : (views[tab] || dashboard)(c);
@@ -105,12 +111,23 @@
   }
 
   function dashboard(c) {
-    const r = R.ranks(c), s = R.activeSession(c), closed = c.sessions.filter(x => x.status === 'closed').length;
-    const status = s ? (s.status === 'setup' ? 'Appel et terrains à valider' : (s.reopened ? 'Séance rouverte pour correction' : 'Matchs en cours')) : '';
-    return `${demoNotice(c)}<div class="grid"><div class="stat"><b>${c.students.length}</b><small>Élèves inscrits</small></div><div class="stat"><b>${closed}</b><small>Séances clôturées</small></div><div class="stat"><b>${c.courts}</b><small>Terrains (par défaut)</small></div><div class="stat"><b>${c.sessions.reduce((n, x) => n + x.matches.filter(m => m.done).length, 0)}</b><small>Matchs enregistrés</small></div></div>
-      <section class="panel" style="margin-top:16px"><h2>${s ? 'Séance en cours' : 'Prochaine séance'}</h2><p class="muted">${s ? `Séance ${s.seq} · ${R.MODES[s.mode]} · ${status}` : 'Préparez une séance, faites l\'appel puis validez les terrains avant de lancer les matchs.'}</p>
-      <button class="btn primary" data-action="tab" data-tab="session">${s ? 'Reprendre la séance' : 'Préparer une séance'}</button></section>
-      <section class="panel"><h2>Top 10 · Classement Elo</h2>${rankingTable(r.slice(0, 10))}</section>`;
+    const r = R.ranks(c), s = R.activeSession(c), closed = c.sessions.filter(x => x.status === 'closed');
+    const last = closed.length ? closed.slice().sort((a, b) => b.seq - a.seq)[0] : null;
+    const status = s ? (s.status === 'setup' ? 'Appel et terrains à valider' : (s.reopened ? 'Séance rouverte pour correction' : s.matches.filter(m => m.done).length + ' / ' + s.matches.length + ' matchs terminés')) : '';
+    const medal = ['#f5c04a', '#d8e1e8', '#d9a066'];
+    const tile = (tabId, ic, title, sub) => `<button type="button" class="home-tile" data-action="tab" data-tab="${tabId}">${icon(ic, 46)}<span><b>${title}</b><span class="muted">${sub}</span></span></button>`;
+    return `${demoNotice(c)}<div class="home">
+      <section class="panel hero">
+        <div><div class="eyebrow">${s ? 'Séance ' + s.seq + ' en cours' : 'Séance ' + (Math.max(0, ...c.sessions.map(x => x.seq)) + 1)}</div>
+        <h1>${s ? esc(R.MODES[s.mode]) : 'Prête à démarrer'}</h1>
+        <p class="muted">${s ? esc(status) : (last ? 'Dernière séance : ' + esc(R.MODES[last.mode].toLowerCase()) + ', ' + last.absent.length + ' absent(s). Les terrains seront proposés dans l\'ordre du classement.' : 'Faites l\'appel, validez les terrains, puis les matchs se lancent.')}</p></div>
+        <button type="button" class="btn primary hero-btn" data-action="tab" data-tab="session"><svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>${s ? 'Reprendre la séance' : 'Lancer la séance'}</button>
+      </section>
+      <section class="panel podium"><h2>Podium Elo</h2>${r.slice(0, 3).map((p, i) => `<button type="button" class="podium-row" data-action="student" data-id="${p.id}"><span class="medal" style="background:${medal[i]}">${i + 1}</span><b>${esc(p.name)}</b><span class="muted">${fmt(p.elo)}</span></button>`).join('') || '<p class="muted">Ajoutez des élèves.</p>'}</section>
+      ${tile('groups', 'groups', 'Groupes de travail', 'Répartir la classe sur les terrains')}
+      ${tile('ranking', 'rank', 'Classement', closed.length + ' séance(s) clôturée(s)')}
+      ${tile('students', 'student', 'Élèves', c.students.length + ' élève(s)')}
+    </div>`;
   }
 
   function demoNotice(c) {
@@ -137,27 +154,43 @@
     return playingUI(c, s);
   }
 
-  function modeFieldsHTML(mode) {
-    const group = ['pools', 'reclass', 'ladder'].includes(mode);
-    return `<div class="row">
-      <div class="field"><label for="target">Score cible (indicatif)</label><input id="target" type="number" min="1" max="99" value="11"></div>
-      ${mode === 'swiss' || mode === 'ladder' ? `<div class="field"><label for="rounds">${mode === 'ladder' ? 'Nombre de rotations' : 'Nombre de rondes'}</label><input id="rounds" type="number" min="1" max="30" value="4"></div>` : ''}
-      ${group ? `<div class="field"><label for="groupSize">${mode === 'reclass' ? 'Taille des poules de brassage' : 'Élèves par groupe (souhaité)'}</label><select id="groupSize">${[3, 4, 5, 6].map(n => `<option value="${n}" ${n === 4 ? 'selected' : ''}>${n}</option>`).join('')}</select></div>` : ''}
-      ${mode === 'ladder' ? `<div class="field"><label for="ladderType">Variante</label><select id="ladderType"><option value="single">Individuelle (2 par terrain)</option><option value="group" selected>Par groupes (mini-poules)</option></select></div>
-        <div class="field"><label for="move">Montées / descentes par rotation (groupes)</label><select id="move"><option>1</option><option>2</option></select></div>` : ''}
-      ${mode === 'challenge' ? `<div class="field"><label for="challengeGap">Écart maximal de rang</label><input id="challengeGap" type="number" min="1" value="3"></div>
-        <div class="field"><label for="permutation">Si le défiant gagne</label><select id="permutation"><option value="swap">Il prend la place du défié</option><option value="none">Pas de permutation</option></select></div>` : ''}
-      ${group ? `<div class="field"><label for="tiebreak">Départage en cas d'égalité de victoires</label><select id="tiebreak">${Object.entries(R.TIEBREAKS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select></div>` : ''}
-      ${mode === 'pools' ? `<div class="field"><label for="legs">Matchs</label><select id="legs"><option value="1">Aller simple</option><option value="2">Aller-retour</option></select></div>` : ''}
-    </div>`;
+  const FORMAT_DESC = {
+    pools: 'Tous contre tous par groupe', ladder: 'Le gagnant monte, le perdant descend', swiss: 'Adversaires de même niveau',
+    challenge: 'Défier un élève proche au classement', reclass: 'Brassage puis toutes les places'
+  };
+  function segBtns(key, opts, label) {
+    const wide = opts.some(([, l]) => String(l).length > 6);
+    return `<div class="field-big"><span class="fb-label">${label}</span><div class="seg ${wide ? 'wide' : ''}" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => {
+      const on = String(draft[key]) === String(v);
+      return `<button type="button" class="seg-btn ${on ? 'on' : ''}" aria-pressed="${on}" data-action="draft" data-key="${key}" data-value="${v}">${l}</button>`;
+    }).join('')}</div></div>`;
+  }
+  function stepperBig(key, min, max, label) {
+    return `<div class="field-big row-step"><span class="fb-label">${label}</span><div class="step-big">
+      <button type="button" class="btn step-btn" data-action="draft-step" data-key="${key}" data-delta="-1" data-min="${min}" data-max="${max}" aria-label="${esc(label)} : moins" ${draft[key] <= min ? 'disabled' : ''}>−</button>
+      <b aria-live="polite">${draft[key]}</b>
+      <button type="button" class="btn step-btn" data-action="draft-step" data-key="${key}" data-delta="1" data-min="${min}" data-max="${max}" aria-label="${esc(label)} : plus" ${draft[key] >= max ? 'disabled' : ''}>+</button></div></div>`;
   }
 
   function newSessionUI(c) {
-    return `<section class="panel"><h2>Nouvelle séance</h2>
-      <div class="row"><div class="field"><label for="sdate">Date</label><input type="date" id="sdate" value="${today()}"></div>
-      <div class="field"><label for="smode">Format de tournoi</label><select id="smode">${Object.entries(R.MODES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div></div>
-      <div id="modeOptions">${modeFieldsHTML('pools')}</div>
-      <button class="btn primary" data-action="create-session">Créer la séance et faire l'appel</button>
+    const m = draft.mode, group = ['pools', 'reclass', 'ladder'].includes(m);
+    const fields = [];
+    if (m === 'swiss' || m === 'ladder') fields.push(stepperBig('rounds', 1, 30, m === 'ladder' ? 'Rotations' : 'Rondes'));
+    if (m === 'ladder') fields.push(segBtns('ladderType', [['single', 'Individuelle (2 par terrain)'], ['group', 'Par groupes']], 'Variante'));
+    if (group && !(m === 'ladder' && draft.ladderType === 'single')) fields.push(segBtns('groupSize', [[3, '3'], [4, '4'], [5, '5'], [6, '6']], m === 'reclass' ? 'Élèves par poule de brassage' : 'Élèves par groupe'));
+    if (m === 'ladder' && draft.ladderType === 'group') fields.push(segBtns('move', [[1, '1'], [2, '2']], 'Montées / descentes'));
+    if (m === 'pools') fields.push(segBtns('legs', [[1, 'Aller simple'], [2, 'Aller-retour']], 'Matchs'));
+    if (m === 'challenge') { fields.push(stepperBig('gap', 1, 50, 'Écart de rang maximal')); fields.push(segBtns('permutation', [['swap', 'Le vainqueur prend la place'], ['none', 'Pas de permutation']], 'Si le défiant gagne')); }
+    fields.push(segBtns('target', [[7, '7'], [11, '11'], [15, '15'], [21, '21']], 'Score cible'));
+    if (group) fields.push(segBtns('tiebreak', [['h2h-diff-pf', 'Confrontation directe'], ['diff-pf-h2h', 'Différence d\'abord'], ['diff-pf', 'Différence, points']], 'Départage des égalités'));
+    return `<section class="panel"><div class="row between"><h2>Nouvelle séance</h2>
+      <div class="field-inline"><label for="sdate" class="small muted">Date</label><input type="date" id="sdate" value="${today()}"></div></div>
+      <div class="format-grid" role="group" aria-label="Format de tournoi">${Object.entries(R.MODES).map(([k, v]) => {
+        const on = draft.mode === k;
+        return `<button type="button" class="format-card ${on ? 'on' : ''}" aria-pressed="${on}" data-action="draft" data-key="mode" data-value="${k}"><b>${v}</b><span>${FORMAT_DESC[k]}</span></button>`;
+      }).join('')}</div>
+      <div class="fields-grid">${fields.join('')}</div>
+      <button type="button" class="btn primary big-cta" data-action="create-session">Suivant : faire l'appel <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></button>
       <p class="muted small">Chaque match validé compte pour l'Elo, mais les Elo ne changent qu'à la clôture de la séance.</p></section>`;
   }
 
@@ -177,10 +210,12 @@
     return `<section class="panel"><div class="row between"><h2>Séance ${s.seq} · Appel et terrains</h2><span class="badge">Validation obligatoire</span></div>
       <p class="muted">${esc(s.date)} · ${R.MODES[s.mode]} · ${s.positions.length} présents / ${c.students.length}</p>
       ${courtsStepper(c, s)}
-      <h3>Appel</h3><div class="grid">${ranked.map(p => `<label class="player"><span>${esc(p.name)} · Elo ${fmt(p.elo)}</span><span><input type="checkbox" style="width:auto" data-action="absent" data-id="${p.id}" ${s.absent.includes(p.id) ? 'checked' : ''}> Absent</span></label>`).join('')}</div>
+      <div class="row between" style="margin-top:14px"><div><h3 style="margin:0">Appel</h3><span class="muted small">Touchez un élève pour le marquer absent</span></div>
+        <div class="row"><span class="count-pill ok">${s.positions.length} présent${s.positions.length > 1 ? 's' : ''}</span><span class="count-pill ko">${s.absent.length} absent${s.absent.length > 1 ? 's' : ''}</span><button type="button" class="btn" data-action="all-present" ${s.absent.length ? '' : 'disabled'}>Tous présents</button></div></div>
+      <div class="roll-grid">${ranked.map(p => { const a = s.absent.includes(p.id); return `<button type="button" class="roll-tile ${a ? 'absent' : ''}" aria-pressed="${a}" aria-label="${esc(p.name)}, ${a ? 'absent' : 'présent'}" data-action="toggle-absent" data-id="${p.id}"><span class="rt-top"><b>${esc(p.name)}</b><span class="rt-mark" aria-hidden="true">${a ? '×' : '✓'}</span></span><span class="rt-sub">${a ? 'Absent' : 'Elo ' + fmt(p.elo)}</span></button>`; }).join('')}</div>
       <h3 style="margin-top:20px">Placement</h3>${placement}
       ${warnings.length ? `<div class="notice warn">${warnings.map(esc).join('<br>')}</div>` : ''}
-      <div class="actions" style="margin-top:18px"><button class="btn primary" data-action="start-session" ${s.positions.length < 2 ? 'disabled' : ''}>✓ Valider les terrains et générer les matchs</button>
+      <div class="actions" style="margin-top:18px"><button class="btn primary big-cta" data-action="start-session" ${s.positions.length < 2 ? 'disabled' : ''}>✓ Valider l'appel et les terrains (${s.positions.length})</button>
       <button class="btn" data-action="repropose">Reproposer selon l'Elo</button>
       <button class="btn danger" data-action="cancel-session">Annuler la séance</button></div></section>`;
   }
@@ -206,13 +241,12 @@
     const nameB = m.b ? esc(nameOf(c, m.b)) : `<i>${esc(sourceText(s, m, 'B'))}</i>`;
     const stateTxt = { done: m.forfeit ? '✓ forfait de ' + esc(nameOf(c, m.forfeit)) : '✓ enregistré', playing: '▶ en cours · terrain ' + m.court, waiting: 'en attente d\'un terrain', pending: 'en attente des matchs précédents' }[st];
     const ready = !!(m.a && m.b);
+    const score = m.done ? (m.forfeit ? 'forfait' : m.sa + ' – ' + m.sb) : '– · –';
     return `<div class="match st-${st}">
       <div class="name ${w && w === m.a ? 'win' : ''}">${nameA}</div>
-      <input type="number" min="0" inputmode="numeric" value="${m.sa == null ? '' : m.sa}" id="a_${m.id}" placeholder="0" aria-label="Score de ${m.a ? esc(nameOf(c, m.a)) : 'A'}" ${ready ? '' : 'disabled'}>
-      <span>–</span>
-      <input type="number" min="0" inputmode="numeric" value="${m.sb == null ? '' : m.sb}" id="b_${m.id}" placeholder="0" aria-label="Score de ${m.b ? esc(nameOf(c, m.b)) : 'B'}" ${ready ? '' : 'disabled'}>
+      <div class="match-score" aria-label="Score">${esc(score)}</div>
       <div class="name ${w && w === m.b ? 'win' : ''}">${nameB}</div>
-      <button class="btn ${m.done ? '' : 'primary'}" data-action="record" data-id="${m.id}" ${ready ? '' : 'disabled'}>${m.done ? 'Corriger' : 'Valider'}</button>
+      <button class="btn ${m.done ? '' : 'primary'} match-btn" data-action="score-sheet" data-id="${m.id}" ${ready ? '' : 'disabled'}>${m.done ? 'Corriger' : 'Saisir le score'}</button>
       <div class="muted small meta">${esc(matchLabel(c, s, m))} · ${stateTxt}${m.invalidated ? ' · <span class="bad">résultat invalidé par une correction en amont, à rejouer</span>' : ''}
         ${ready ? `<details class="more"><summary>Autres actions</summary><div class="actions">
           <button class="btn" data-action="forfeit" data-id="${m.id}" data-loser="${m.a}">Forfait de ${esc(nameOf(c, m.a))}</button>
@@ -292,11 +326,11 @@
       const m = s.matches.find(x => x.court === t && !x.done);
       const bench = m ? benchFor(s, m) : [];
       cards.push(`<div class="court-card"><div class="cc-head"><h3>Terrain ${t}</h3><span class="badge ${m ? 'cc-on' : ''}">${m ? 'En cours' : 'Libre'}</span></div>
-        ${m ? courtDrawing(c, { left: [m.a], right: [m.b], state: 'playing', clickable: true }) : courtDrawing(c, { state: 'free' })}
+        ${m ? `<div class="cd-wrap">${courtDrawing(c, { left: [m.a], right: [m.b], state: 'playing' })}<button type="button" class="cd-hit" data-action="score-sheet" data-id="${m.id}" aria-label="Terrain ${t} : ${esc(nameOf(c, m.a))} contre ${esc(nameOf(c, m.b))}, saisir le score"></button></div>` : courtDrawing(c, { state: 'free' })}
         <div class="cc-foot">
           <span class="muted small">${m ? esc(matchLabel(c, s, m)) : 'En attente du prochain match de la file'}</span>
           ${bench.length ? `<div class="cc-bench"><span class="small muted">Sur le banc</span>${bench.map(id => `<span class="bench-chip">${esc(nameOf(c, id))}</span>`).join('')}</div>` : ''}
-          <div class="actions">${m ? `<button class="btn mini primary" data-action="focus-match" data-id="${m.id}">Saisir le score</button><button class="btn mini" data-action="qr-match" data-id="${m.id}" aria-label="QR code du match du terrain ${t}">QR</button>` : ''}
+          <div class="actions">${m ? `<button class="btn primary" data-action="score-sheet" data-id="${m.id}">Saisir le score</button><button class="btn mini" data-action="qr-match" data-id="${m.id}" aria-label="QR code du match du terrain ${t}">QR</button>` : ''}
           <button class="btn mini court-close" data-action="court-toggle" data-court="${t}" data-closed="1" aria-label="Fermer le terrain ${t}">Fermer</button></div>
         </div></div>`);
     }
@@ -396,6 +430,40 @@
       <div class="actions"><button class="btn primary" data-action="close-session" ${R.canClose(s).ok ? '' : 'disabled'}>✓ Valider tous les résultats et recalculer l'Elo</button>
       <button class="btn danger" data-action="cancel-session">${s.reopened ? 'Annuler la correction (restaurer la séance clôturée)' : 'Annuler la séance'}</button></div>
       ${R.canClose(s).ok ? '' : `<p class="muted small">${esc(R.canClose(s).reason)}</p>`}</section>`;
+  }
+
+  /* ---------------- Saisie du score : grand panneau, sans clavier ---------------- */
+  let ss = null; // { id, sa, sb }
+  function openScoreSheet(id) {
+    const c = cl(), s = R.activeSession(c), m = s && s.matches.find(x => x.id === id);
+    if (!m || !m.a || !m.b) return;
+    ss = { id, sa: m.done && !m.forfeit ? m.sa : 0, sb: m.done && !m.forfeit ? m.sb : 0 };
+    renderScoreSheet();
+    const dlg = $('scoreDialog');
+    if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', ''); }
+  }
+  function closeScoreSheet() { const d = $('scoreDialog'); ss = null; if (d.open) { if (d.close) d.close(); else d.removeAttribute('open'); } }
+  function renderScoreSheet() {
+    const c = cl(), s = R.activeSession(c), m = s && ss && s.matches.find(x => x.id === ss.id);
+    if (!m) { closeScoreSheet(); return; }
+    const target = s.target || 11, tie = ss.sa === ss.sb;
+    const side = (k, id, dot) => { const v = ss[k], other = ss[k === 'sa' ? 'sb' : 'sa'], n = nameOf(c, id); return `<div class="ss-player ${v > other ? 'lead' : ''}">
+      <div class="ss-name"><span class="ss-dot" style="background:${dot}" aria-hidden="true">${esc(initials(n))}</span>${esc(n)}</div>
+      <div class="ss-score"><button type="button" class="btn ss-btn" data-action="ss-step" data-side="${k}" data-delta="-1" aria-label="Retirer un point à ${esc(n)}">−</button>
+      <output aria-live="polite">${v}</output>
+      <button type="button" class="btn primary ss-btn" data-action="ss-step" data-side="${k}" data-delta="1" aria-label="Ajouter un point à ${esc(n)}">+</button></div>
+      <button type="button" class="btn ss-target" data-action="ss-target" data-side="${k}">${esc(n)} gagne : ${target}</button></div>`; };
+    $('scoreDialog').innerHTML = `<div class="ss-box">
+      <div class="ss-head"><div><div class="eyebrow">${m.court ? 'Terrain ' + m.court + ' · ' : ''}${esc(matchLabel(c, s, m))}</div>
+        <h2 id="scoreTitle">Score cible ${target} · point décisif en cas d'égalité</h2></div>
+        <button type="button" class="btn icon-btn" data-action="ss-close" aria-label="Fermer sans enregistrer">✕</button></div>
+      <div class="ss-grid">${side('sa', m.a, '#f5c04a')}${side('sb', m.b, '#9ad7ff')}</div>
+      <div class="ss-actions">${tie ? '<div class="ss-tie" role="status">Égalité : jouez un point décisif</div>' : `<button type="button" class="btn primary ss-validate" data-action="ss-validate">✓ Valider ${ss.sa} – ${ss.sb}</button>`}
+        <details class="more ss-more"><summary class="btn">Plus…</summary><div class="actions">
+          <button type="button" class="btn" data-action="ss-forfeit" data-loser="${m.a}">Forfait de ${esc(nameOf(c, m.a))}</button>
+          <button type="button" class="btn" data-action="ss-forfeit" data-loser="${m.b}">Forfait de ${esc(nameOf(c, m.b))}</button>
+          <button type="button" class="btn" data-action="qr-match" data-id="${m.id}">QR de la feuille de match</button>
+          ${m.done ? '<button type="button" class="btn danger" data-action="ss-clear">Effacer le résultat</button>' : ''}</div></details></div></div>`;
   }
 
   /* ---------------- Classement et fiche ---------------- */
@@ -966,8 +1034,49 @@
       act(() => R.renameStudent(c, p.id, name), 'Élève renommé');
     },
     'create-session': () => {
-      const c = cl(), g = id => ($(id) ? $(id).value : undefined);
-      act(() => R.createSession(c, { date: g('sdate'), mode: g('smode'), rounds: g('rounds'), target: g('target'), groupSize: g('groupSize'), ladderType: g('ladderType'), move: g('move'), gap: g('challengeGap'), legs: g('legs'), permutation: g('permutation'), tiebreak: g('tiebreak') }));
+      const c = cl();
+      act(() => R.createSession(c, Object.assign({}, draft, { date: $('sdate') ? $('sdate').value : today() })));
+    },
+    'draft': el => {
+      const v = el.dataset.value;
+      draft[el.dataset.key] = /^\d+$/.test(v) ? Number(v) : v;
+      if (el.dataset.key === 'mode') draft.rounds = 4;
+      render();
+    },
+    'draft-step': el => {
+      const k = el.dataset.key;
+      draft[k] = Math.max(Number(el.dataset.min), Math.min(Number(el.dataset.max), draft[k] + Number(el.dataset.delta)));
+      render();
+    },
+    'toggle-absent': el => {
+      const c = cl(), s = R.activeSession(c);
+      act(() => R.setAbsent(c, s, el.dataset.id, !s.absent.includes(el.dataset.id)));
+    },
+    'all-present': () => {
+      const c = cl(), s = R.activeSession(c);
+      s.absent.slice().forEach(id => R.setAbsent(c, s, id, false));
+      save(); render();
+    },
+    'score-sheet': el => openScoreSheet(el.dataset.id),
+    'ss-step': el => { ss[el.dataset.side] = Math.max(0, Math.min(99, ss[el.dataset.side] + Number(el.dataset.delta))); renderScoreSheet(); },
+    'ss-target': el => { ss[el.dataset.side] = R.activeSession(cl()).target || 11; renderScoreSheet(); },
+    'ss-close': () => closeScoreSheet(),
+    'ss-validate': () => {
+      const c = cl(), s = R.activeSession(c), id = ss.id, v = { sa: ss.sa, sb: ss.sb };
+      const r = act(o => R.recordResult(c, s, id, v, o), 'Score enregistré');
+      if (r && r.ok) closeScoreSheet();
+    },
+    'ss-forfeit': el => {
+      const c = cl(), s = R.activeSession(c), id = ss.id;
+      if (!confirm('Enregistrer un forfait de ' + nameOf(c, el.dataset.loser) + ' ? Un forfait ne compte pas pour l\'Elo ni pour les points.')) return;
+      const r = act(o => R.recordResult(c, s, id, { forfeit: el.dataset.loser }, o), 'Forfait enregistré');
+      if (r && r.ok) closeScoreSheet();
+    },
+    'ss-clear': () => {
+      if (!confirm('Effacer ce résultat ?')) return;
+      const c = cl(), s = R.activeSession(c), id = ss.id;
+      const r = act(o => R.clearResult(c, s, id, o), 'Résultat effacé');
+      if (r && r.ok) closeScoreSheet();
     },
     'repropose': () => { const c = cl(); R.proposePlacement(c, R.activeSession(c)); save(); render(); },
     'shift': el => act(() => R.shiftPosition(R.activeSession(cl()), el.dataset.id, Number(el.dataset.dir))),
@@ -981,11 +1090,6 @@
       const msg = s.reopened ? 'Annuler la correction ? La séance retrouvera son état clôturé d\'origine.' : 'Annuler cette séance et supprimer ses résultats ?';
       if (!confirm(msg)) return;
       act(() => R.cancelSession(c, s), s.reopened ? 'Séance restaurée' : 'Séance annulée');
-    },
-    'record': el => {
-      const c = cl(), s = R.activeSession(c), id = el.dataset.id;
-      const a = $('a_' + id).value.trim(), b = $('b_' + id).value.trim();
-      act(o => R.recordResult(c, s, id, { sa: a === '' ? '' : Number(a), sb: b === '' ? '' : Number(b) }, o), 'Score enregistré');
     },
     'forfeit': el => {
       const c = cl(), s = R.activeSession(c);
@@ -1057,12 +1161,6 @@
       pool.st.finished = true; savePool(); renderPoolSheet(); window.scrollTo(0, 0);
     },
     'pool-edit': () => { pool.st.finished = false; savePool(); renderPoolSheet(); },
-    'focus-match': el => {
-      const input = $('a_' + el.dataset.id);
-      if (!input) return;
-      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setTimeout(() => input.focus({ preventScroll: true }), 300);
-    },
     'qr-close': () => { const d = $('qrDialog'); if (d.close) d.close(); else d.removeAttribute('open'); },
     'scan-open': () => openScan(),
     'scan-close': () => closeScan(),
@@ -1129,11 +1227,9 @@
   document.addEventListener('change', e => {
     const el = e.target;
     if (el.id === 'classSelect') { db.active = el.value || null; save(); render(); return; }
-    if (el.id === 'smode') { $('modeOptions').innerHTML = modeFieldsHTML(el.value); return; }
     if (el.id === 'partition') { partitionKey = el.value; render(); return; }
     if (el.id === 'importFile') { importJSON(el); return; }
     const c = cl();
-    if (el.dataset.action === 'absent') { const s = R.activeSession(c); act(() => R.setAbsent(c, s, el.dataset.id, el.checked)); return; }
     if (el.dataset.action === 'wg-mode') { act(() => R.buildWorkGroups(c, { mode: el.value })); return; }
     if (el.dataset.action === 'wg-absent') {
       const prev = c.workGroups ? c.workGroups.absent : [];
@@ -1157,11 +1253,12 @@
     if (projection && (e.key === 'f' || e.key === 'F')) { handlers['proj-fullscreen'](); return; }
     if (e.key !== 'Enter') return;
     if (e.target.id === 'newStudent') handlers['add-student']();
-    const m = e.target.id && e.target.id.match(/^[ab]_(.+)$/);
-    if (m) handlers.record({ dataset: { id: m[1] } });
+
   });
 
   $('studentDialog').addEventListener('click', e => { if (e.target.id === 'studentDialog') closeFiche(); });
+  $('scoreDialog').addEventListener('click', e => { if (e.target.id === 'scoreDialog') closeScoreSheet(); });
+  $('scoreDialog').addEventListener('close', () => { ss = null; });
   $('studentDialog').addEventListener('close', () => { if (ficheOpener && ficheOpener.focus && document.contains(ficheOpener)) ficheOpener.focus(); ficheOpener = null; });
 
   document.addEventListener('submit', e => {

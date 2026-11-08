@@ -10,14 +10,24 @@
 <body>
 <div class="app">
   <header class="top">
-    <div><div class="brand">🏸 Racket <span>EPS</span></div><div class="muted small">Tournois • Classements Elo • Suivi longitudinal</div></div>
-    <div class="row"><label class="sr-only" for="classSelect">Classe</label><select id="classSelect" style="width:auto"></select><button class="btn" data-action="add-class">+ Classe</button><button class="btn" data-action="demo-class" title="Classe d'élèves fictifs pour tester l'application">Classe exemple</button></div>
+    <div class="top-left">
+      <div class="brand" aria-label="Racket EPS"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#5ce1bb" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18l4-4"/><path d="M10 14l2-9 7 7-9 2z"/><path d="M12 5l7 7"/><circle cx="5" cy="19" r="2"/></svg><span class="brand-txt">Racket <span>EPS</span></span></div>
+      <label class="sr-only" for="classSelect">Classe</label><select id="classSelect" class="class-pill"></select>
+    </div>
+    <div class="top-right">
+      <button type="button" class="btn icon-btn" data-action="add-class" aria-label="Nouvelle classe" title="Nouvelle classe"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button type="button" class="btn icon-btn wide" data-action="demo-class" title="Classe d'élèves fictifs pour tester l'application">Classe exemple</button>
+      <button type="button" class="btn icon-btn" data-action="tab" data-tab="history" aria-label="Historique des séances" title="Historique"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></button>
+      <button type="button" class="btn icon-btn" data-action="export-json" aria-label="Sauvegarder (export JSON)" title="Sauvegarder"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg></button>
+      <button type="button" class="btn icon-btn" data-action="tab" data-tab="settings" aria-label="Réglages" title="Réglages"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></button>
+    </div>
   </header>
-  <nav class="nav" id="nav" aria-label="Sections"></nav>
   <div id="banner"></div>
   <main id="view"></main>
   <footer class="muted small" style="padding:25px 0">Racket EPS · Données enregistrées sur cet appareil · Exportez régulièrement une sauvegarde JSON</footer>
 </div>
+<nav class="tabbar" id="nav" aria-label="Navigation principale"></nav>
+<dialog id="scoreDialog" aria-labelledby="scoreTitle"></dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <dialog id="qrDialog" aria-labelledby="qrTitle"></dialog>
 <dialog id="studentDialog" aria-labelledby="studentTitle"></dialog>

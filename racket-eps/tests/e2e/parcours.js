@@ -31,11 +31,15 @@ async function playAll(page, counter) {
     if (!(await noConflict(page))) throw new Error('ÉCHEC : conflit de terrain ou d\'élève');
     const row = await page.$('.match.st-playing');
     if (!row) return;
-    const inputs = await row.$$('input');
+    // Saisie au toucher : « X gagne : 11 » puis le score du perdant avec « + », puis Valider
     const i = counter.n++;
-    await inputs[0].fill(String(i % 2 ? 11 : i % 9));
-    await inputs[1].fill(String(i % 2 ? i % 9 : 11));
-    await (await row.$('button[data-action="record"]')).click();
+    await (await row.$('[data-action="score-sheet"]')).click();
+    await page.waitForSelector('#scoreDialog[open] .ss-player');
+    const win = i % 2 ? 'sa' : 'sb', lose = i % 2 ? 'sb' : 'sa';
+    await page.click('#scoreDialog [data-action="ss-target"][data-side="' + win + '"]');
+    for (let k = 0; k < i % 9; k++) await page.click('#scoreDialog [data-action="ss-step"][data-side="' + lose + '"][data-delta="1"]');
+    await page.click('#scoreDialog [data-action="ss-validate"]');
+    await page.waitForFunction(() => !document.querySelector('#scoreDialog').open);
   }
 }
 
@@ -54,9 +58,9 @@ async function scenario(browser, label, ctxOpts) {
 
   // Séance 1 : poules
   await page.click('[data-tab="session"]');
-  await page.selectOption('#smode', 'pools');
+  await page.click('[data-action="draft"][data-key="mode"][data-value="pools"]');
   await page.click('[data-action="create-session"]');
-  await page.check('input[data-action="absent"] >> nth=11');
+  await page.click('[data-action="toggle-absent"] >> nth=11');
   const present = await page.evaluate(() => window.__racket.getDB().classes[0].sessions[0].positions.length);
   check(present === 11, 'appel : 1 absent, 11 présents');
   const groups = await page.evaluate(() => window.__racket.getDB().classes[0].sessions[0].groups.map(g => g.length));
@@ -75,10 +79,16 @@ async function scenario(browser, label, ctxOpts) {
   check(await proj.$$eval('.proj-court', n => n.length) === 4, 'projection : 4 terrains affichés');
   check(!/Elo/i.test(await proj.innerText('body')), 'projection : aucune donnée Elo affichée');
   const projBefore = await proj.textContent('.proj-prog');
-  const firstRow = await page.$('.match.st-playing');
-  const ins = await firstRow.$$('input');
-  await ins[0].fill('11'); await ins[1].fill('4');
-  await (await firstRow.$('button[data-action="record"]')).click();
+  // Toucher le terrain 1 ouvre la saisie du score (sans clavier)
+  await page.click('.court-card .cd-hit >> nth=0');
+  await page.waitForSelector('#scoreDialog[open] .ss-player');
+  check(await page.$('#scoreDialog .ss-tie') !== null, 'saisie : validation bloquée tant que le score est à égalité');
+  await page.click('#scoreDialog [data-action="ss-target"][data-side="sa"]');
+  for (let k = 0; k < 4; k++) await page.click('#scoreDialog [data-action="ss-step"][data-side="sb"][data-delta="1"]');
+  check((await page.textContent('#scoreDialog .ss-validate')).includes('11 – 4'), 'saisie au toucher : 11 – 4 sans clavier');
+  if (label === 'ordinateur') await page.screenshot({ path: path.join(OUT, 'saisie-score.png') });
+  await page.click('#scoreDialog [data-action="ss-validate"]');
+  await page.waitForFunction(() => !document.querySelector('#scoreDialog').open);
   await proj.waitForFunction(b => document.querySelector('.proj-prog').textContent !== b, projBefore, { timeout: 5000 });
   check(true, 'projection mise à jour automatiquement après une saisie (' + (await proj.textContent('.proj-prog')) + ')');
   check(await proj.$$eval('.proj-court .court-draw', n => n.length) === 4, 'projection : terrains dessinés');
@@ -104,8 +114,10 @@ async function scenario(browser, label, ctxOpts) {
 
   // Séance 2 : ronde suisse, proposition selon l'Elo
   await page.click('[data-tab="session"]');
-  await page.selectOption('#smode', 'swiss');
-  await page.fill('#rounds', '2');
+  await page.click('[data-action="draft"][data-key="mode"][data-value="swiss"]');
+  await page.click('[data-action="draft-step"][data-key="rounds"][data-delta="-1"]');
+  await page.click('[data-action="draft-step"][data-key="rounds"][data-delta="-1"]');
+  check(await page.textContent('.row-step b') === '2', 'nouvelle séance réglée sans clavier (ronde suisse, 2 rondes)');
   await page.click('[data-action="create-session"]');
   const ordered = await page.evaluate(() => {
     const c = window.__racket.getDB().classes[0], R = window.RacketEngine;
@@ -406,6 +418,7 @@ async function qrFlow(browser) {
   try {
     await scenario(browser, 'ordinateur', { viewport: { width: 1280, height: 900 } });
     await scenario(browser, 'telephone', devices['iPhone 13']);
+    await scenario(browser, 'tablette', devices['iPad (gen 7) landscape']);
     await migration(browser);
     await demoClass(browser);
     await qrFlow(browser);

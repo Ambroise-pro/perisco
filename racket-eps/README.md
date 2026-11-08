@@ -14,6 +14,21 @@ qr.js        générateur de QR codes (sans dépendance) — window.RacketQR
 tests/       tests du moteur et du générateur QR (node --test), parcours navigateur (Playwright)
 ```
 
+## Interface pensée pour la tablette
+L'application se pilote principalement **au toucher, avec de gros boutons**, sur une tablette tenue à l'horizontale.
+- **Barre de navigation en bas**, à portée de pouce : Accueil, Séance, Groupes, Classement, Élèves. L'Historique, la sauvegarde (export JSON) et les Réglages sont des boutons-icônes en haut à droite. La classe se choisit avec le grand bouton en haut à gauche.
+- **Accueil** : un très grand bouton « Lancer la séance » (ou « Reprendre »), le podium Elo et des tuiles vers les autres écrans.
+- **Nouvelle séance sans clavier** : le format se choisit sur de grandes cartes, les rondes et l'écart de défi se règlent avec − / +, les autres options sont des boutons à choix unique (élèves par groupe, score cible, variante, matchs, départage). La date utilise le sélecteur natif.
+- **Appel au toucher** : une tuile par élève ; un toucher le marque absent (barré, bordure pointillée, croix), un second le remet présent. Le décompte s'affiche en direct, avec un bouton « Tous présents ».
+- **Saisie du score en grand panneau**, sans champ numérique :
+  - on y accède en touchant le terrain dessiné, ou par « Saisir le score » sur un terrain ou un match ;
+  - boutons − / + de 88 px, et un bouton « X gagne : 11 » qui met directement le score cible ;
+  - la validation est bloquée en cas d'égalité, avec un rappel de jouer le point décisif ;
+  - « Plus… » donne accès au forfait, au QR et à l'effacement.
+- **Zones tactiles** de 52 à 100 px, texte à partir de 17 px, contrastes renforcés (boutons principaux vert d'eau sur texte sombre). Les états ne reposent jamais sur la couleur seule.
+
+Le clavier ne sert plus qu'à saisir les noms des élèves, une fois par classe (collage d'une liste possible), et à la saisie manuelle d'un code de résultat quand la caméra ne lit pas les QR.
+
 ## Règles métier implémentées
 - **Elo figé pendant la séance.** Chaque match validé contribue `K × (S − E)` avec les Elo de **début** de séance. Les variations sont sommées puis appliquées toutes en même temps à la clôture, donc l'ordre de saisie ne change rien. La précision est conservée en mémoire ; l'arrondi ne se fait qu'à l'affichage.
 - **Recalcul chronologique.** Le classement est recalculé à partir des séances clôturées, dans l'ordre. Corriger une séance passée (Historique → Rouvrir) recalcule les séances suivantes sans double comptage. *Annuler la correction* restaure la séance d'origine.
