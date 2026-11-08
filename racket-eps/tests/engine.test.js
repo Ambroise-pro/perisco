@@ -628,3 +628,39 @@ test('Feuille de poule : tous les matchs de la poule, un code pour toute la poul
   playSession(c, s, rng(4));
   assert.ok(R.closeSession(c, s).ok);
 });
+
+test('Sauvegardes : export d\'une classe, import par fusion sans écraser les autres classes, rappel', () => {
+  const db = R.emptyDB();
+  const a = R.createDemoClass({ students: 8, sessions: 2, seed: 'A', name: 'Classe A' });
+  const b = R.createDemoClass({ students: 6, sessions: 1, seed: 'B', name: 'Classe B' });
+  db.classes.push(a, b); db.active = a.id;
+  // Rappel : 3 séances clôturées jamais exportées
+  assert.equal(R.unsavedSessions(db), 3);
+  R.markExported(db, Date.now() + 1000);
+  assert.equal(R.unsavedSessions(db), 0);
+  // Export de la seule classe A, relu comme une sauvegarde valide
+  const exp = R.parseDB(JSON.stringify(R.exportClass(db, a.id)));
+  assert.equal(exp.classes.length, 1);
+  assert.equal(exp.classes[0].name, 'Classe A');
+  // Sur un autre appareil vide : la classe est ajoutée
+  const other = R.emptyDB();
+  const r1 = R.applyImport(other, exp);
+  assert.equal(r1.report.added, 1);
+  assert.equal(r1.db.active, a.id);
+  // Sur l'appareil d'origine : classe déjà présente → ignorée par défaut, B jamais touchée
+  const plan = R.planImport(db, exp);
+  assert.ok(plan[0].exists);
+  const skip = R.applyImport(db, exp);
+  assert.deepEqual(skip.report, { added: 0, replaced: 0, copied: 0, skipped: 1 });
+  // Remplacer, ou garder les deux
+  const changed = JSON.parse(JSON.stringify(exp));
+  changed.classes[0].students[0].name = 'Renommé';
+  const rep = R.applyImport(db, changed, { [a.id]: 'replace' });
+  assert.equal(rep.db.classes.find(c => c.id === a.id).students[0].name, 'Renommé');
+  assert.equal(rep.db.classes.length, 2);
+  assert.equal(rep.db.classes.find(c => c.id === b.id).students.length, 6, 'classe B intacte');
+  const cp = R.applyImport(db, changed, { [a.id]: 'copy' });
+  assert.equal(cp.db.classes.length, 3);
+  assert.ok(cp.db.classes.some(c => /copie importée/.test(c.name)));
+  assert.equal(db.classes.length, 2, 'les données d\'origine ne sont pas modifiées par la simulation');
+});

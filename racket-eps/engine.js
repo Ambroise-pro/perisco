@@ -1329,6 +1329,68 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * Sauvegardes : export par classe, import par fusion, rappel de sauvegarde
+   * ------------------------------------------------------------------ */
+  /** Sauvegarde ne contenant qu'une classe (transfert vers un autre appareil). */
+  function exportClass(db, classId) {
+    const c = db.classes.find(x => x.id === classId);
+    if (!c) throw new Error('Classe introuvable.');
+    return { schemaVersion: SCHEMA_VERSION, kind: 'classe', exportedAt: Date.now(), classes: [clone(c)], active: c.id };
+  }
+
+  function lastActivity(c) {
+    return Math.max(0, ...c.sessions.map(s => s.closedAt || 0));
+  }
+
+  /** Ce que contient une sauvegarde à importer, classe par classe, comparé aux données locales. */
+  function planImport(db, incoming) {
+    return incoming.classes.map(ic => {
+      const local = db.classes.find(c => c.id === ic.id);
+      return {
+        id: ic.id, name: ic.name, students: ic.students.length, sessions: ic.sessions.filter(s => s.status === 'closed').length,
+        exists: !!local,
+        localSessions: local ? local.sessions.filter(s => s.status === 'closed').length : 0,
+        incomingNewer: local ? lastActivity(ic) > lastActivity(local) : true
+      };
+    });
+  }
+
+  /**
+   * Fusion d'une sauvegarde dans les données locales. Les classes absentes sont ajoutées ;
+   * pour une classe déjà présente, choices[id] = 'replace' (remplacer), 'copy' (garder les deux)
+   * ou 'skip' (ignorer, par défaut). Les autres classes locales ne sont jamais touchées.
+   */
+  function applyImport(db, incoming, choices) {
+    choices = choices || {};
+    const out = clone(db);
+    const report = { added: 0, replaced: 0, copied: 0, skipped: 0 };
+    incoming.classes.forEach(ic => {
+      const idx = out.classes.findIndex(c => c.id === ic.id);
+      if (idx < 0) { out.classes.push(clone(ic)); report.added++; return; }
+      const ch = choices[ic.id] || 'skip';
+      if (ch === 'replace') { out.classes[idx] = clone(ic); report.replaced++; }
+      else if (ch === 'copy') {
+        const cp = clone(ic);
+        cp.id = uid();
+        cp.name = ic.name + ' (copie importée)';
+        out.classes.push(cp); report.copied++;
+      } else report.skipped++;
+    });
+    if (!out.classes.some(c => c.id === out.active)) out.active = out.classes[0] ? out.classes[0].id : null;
+    const v = validateDB(out);
+    if (!v.ok) throw new Error(v.errors.slice(0, 3).join(' '));
+    return { db: out, report };
+  }
+
+  /** Séances clôturées depuis la dernière sauvegarde exportée (pour le rappel). */
+  function unsavedSessions(db) {
+    const since = db.lastExportAt || 0;
+    return db.classes.reduce((n, c) => n + c.sessions.filter(s => s.status === 'closed' && (s.closedAt || 0) > since).length, 0);
+  }
+
+  function markExported(db, at) { db.lastExportAt = at || Date.now(); return db; }
+
+  /* ------------------------------------------------------------------ *
    * Élèves
    * ------------------------------------------------------------------ */
   function addStudents(c, names) {
@@ -1446,6 +1508,6 @@
     makeWorkGroups, buildWorkGroups, moveWorkGroup, workGroupStats,
     shortHash, shortId, ensureQrToken, sheetData, encodeSheet, decodeSheet, resultCode, parseResultCode, applyResultCode,
     groupMatches, poolSheetData, decodePoolSheet, poolResultCode, parsePoolResultCode, applyPoolResultCode, applyAnyCode,
-    emptyDB, migrate, validateDB, parseDB, addStudents, renameStudent, nameKey, createDemoClass, DEMO_NAMES
+    emptyDB, migrate, validateDB, parseDB, exportClass, planImport, applyImport, unsavedSessions, markExported, addStudents, renameStudent, nameKey, createDemoClass, DEMO_NAMES
   };
 });
