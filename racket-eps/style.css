@@ -108,3 +108,9 @@ body.projection h2{font-size:clamp(20px,2.4vw,36px);margin:2vw 0 1vw;color:#9fd8
 .proj-tools{position:fixed;right:12px;bottom:12px;display:flex;gap:8px;opacity:.35}
 .proj-tools:hover,.proj-tools:focus-within{opacity:1}
 @media print{.proj-tools{display:none}}
+/* Terrains de la séance */
+.courts-stepper{gap:8px}
+.courts-count{min-width:3ch;text-align:center;font-size:18px}
+.court{display:flex;flex-direction:column;gap:4px}
+.court .court-close{margin-top:auto;align-self:flex-end;opacity:.8}
+.court.closed{background:#1a2532!important;border:2px dashed #4b5d70!important;color:#a7bac8}

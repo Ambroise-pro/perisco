@@ -21,7 +21,8 @@ async function noConflict(page) {
     if (!s) return true;
     const act = s.matches.filter(m => m.court && !m.done);
     const pl = act.flatMap(m => [m.a, m.b]), ct = act.map(m => m.court);
-    return new Set(pl).size === pl.length && new Set(ct).size === ct.length && ct.every(t => t <= c.courts);
+    const avail = window.RacketEngine.availableCourts(c, s);
+    return new Set(pl).size === pl.length && new Set(ct).size === ct.length && ct.every(t => avail.includes(t));
   });
 }
 
@@ -197,6 +198,18 @@ async function demoClass(browser) {
   await page.click('[data-action="create-session"]');
   await page.click('[data-action="start-session"]');
   check(await page.$$eval('.match.st-playing', n => n.length) === 6, 'nouvelle séance possible sur la classe exemple (6 terrains occupés)');
+  // Terrains modifiés en cours de séance
+  await page.click('[data-action="courts-step"][data-delta="1"]');
+  check(await page.$$eval('.match.st-playing', n => n.length) === 7 && await noConflict(page), 'ajout d\'un terrain en cours de séance : 7 matchs en cours, sans conflit');
+  await page.click('[data-action="court-toggle"][data-court="2"]');
+  const on2 = await page.evaluate(() => { const c = window.__racket.getDB().classes[0]; const s = c.sessions.find(x => x.status !== 'closed'); return s.matches.some(m => m.court === 2 && !m.done); });
+  check(!on2 && await noConflict(page) && /Fermé/.test(await page.innerText('#view')), 'terrain 2 fermé (match en cours renvoyé en file après confirmation)');
+  await page.click('[data-action="courts-step"][data-delta="-1"]');
+  const state = await page.evaluate(() => { const c = window.__racket.getDB().classes[0]; const s = c.sessions.find(x => x.status !== 'closed'); return { total: s.courts, cls: c.courts, active: s.matches.filter(m => m.court && !m.done).length }; });
+  check(state.total === 6 && state.cls === 6 && state.active === 5 && await noConflict(page), 'retrait d\'un terrain : 6 terrains dont 1 fermé, 5 matchs en cours ; réglage de la classe inchangé');
+  await page.click('[data-action="court-toggle"][data-court="2"]');
+  check(await page.$$eval('.match.st-playing', n => n.length) === 6, 'terrain 2 rouvert : 6 matchs en cours');
+  await page.screenshot({ path: path.join(OUT, 'exemple-terrains.png'), fullPage: false });
   check(errors.length === 0, 'aucune erreur JavaScript');
   await ctx.close();
 }

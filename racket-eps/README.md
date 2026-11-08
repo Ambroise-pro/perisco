@@ -20,6 +20,11 @@ tests/       tests du moteur (node --test) et parcours navigateur (Playwright)
 - **Politique des forfaits :** un forfait donne la victoire au tournoi de la séance, mais **ni Elo, ni points marqués ou encaissés**. Il est comptabilisé à part (victoires et défaites par forfait).
 - **Deux classements distincts :** le classement de la séance (points de tournoi) et le classement Elo du cycle.
 - **Placement :** il est proposé dans l'ordre Elo, sans les absents. L'enseignant ajuste (groupes ou ordre), puis **valide**. Le placement validé est exactement celui qui sert à générer les matchs.
+- **Terrains modifiables en cours de séance** (onglet Séance, « Terrains disponibles − / + », et bouton « Fermer » sur chaque terrain) :
+  - on peut ajouter ou retirer un terrain, ou en fermer un précis (pas forcément le dernier), puis le rouvrir ;
+  - un match en cours sur un terrain retiré retourne en file d'attente, après confirmation ;
+  - les matchs sont réaffectés aussitôt, et il reste toujours au moins un terrain ouvert ;
+  - ce réglage ne vaut que pour la séance : le nombre de terrains de la classe (Réglages) reste la valeur par défaut des prochaines séances.
 - **Terrains :** un terrain accueille un seul match à la fois, et un élève ne joue jamais deux matchs simultanés. Les matchs attendent un terrain libre (file d'attente), et le terrain du groupe est privilégié quand il est libre.
 
 ## Formats

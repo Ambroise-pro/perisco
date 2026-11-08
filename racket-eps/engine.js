@@ -179,6 +179,7 @@
       permutation: opts.permutation === 'none' ? 'none' : 'swap',
       tiebreak: TIEBREAKS[opts.tiebreak] ? opts.tiebreak : 'h2h-diff-pf',
       k: c.k != null ? c.k : 32,
+      courts: Math.max(1, c.courts || 1), closedCourts: [],
       byes: [], moves: [], phase: mode === 'reclass' ? 'brassage' : null, divisions: []
     };
     c.sessions.push(s);
@@ -347,13 +348,31 @@
    * joueurs n'est déjà sur un terrain. Priorité : ronde la plus ancienne, puis ordre de création ;
    * le terrain « préféré » (celui du groupe) est choisi s'il est libre.
    */
+  /*
+   * Terrains de la séance. Le nombre de terrains de la classe sert de valeur par défaut à la
+   * création ; pendant la séance, l'enseignant peut en ajouter, en retirer ou fermer un terrain
+   * précis (s.closedCourts) sans toucher au réglage de la classe ni aux séances passées.
+   */
+  function totalCourts(c, s) {
+    return Math.max(1, (s && s.courts) || c.courts || 1);
+  }
+
+  function availableCourts(c, s) {
+    const closed = new Set((s && s.closedCourts) || []);
+    const out = [];
+    for (let t = 1; t <= totalCourts(c, s); t++) if (!closed.has(t)) out.push(t);
+    return out;
+  }
+
   function autoAssign(c, s) {
     if (s.status !== 'playing') return [];
-    const courts = Math.max(1, c.courts || 1);
+    const avail = availableCourts(c, s);
+    const open = new Set(avail);
     const busyCourts = new Set(), busy = new Set();
     s.matches.forEach(m => {
       if (m.court && !m.done) {
-        if (m.court > courts) { m.court = null; return; }
+        // Terrain retiré ou fermé : le match retourne en file d'attente.
+        if (!open.has(m.court)) { m.court = null; return; }
         busyCourts.add(m.court); busy.add(m.a); busy.add(m.b);
       }
     });
@@ -362,16 +381,53 @@
       .filter(x => !x.m.done && !x.m.court && x.m.a && x.m.b)
       .sort((x, y) => (x.m.round - y.m.round) || (x.i - y.i));
     for (const { m } of queue) {
-      if (busyCourts.size >= courts) break;
+      if (busyCourts.size >= avail.length) break;
       if (busy.has(m.a) || busy.has(m.b)) continue;
-      let court = m.pref && m.pref <= courts && !busyCourts.has(m.pref) ? m.pref : null;
-      if (!court) for (let t = 1; t <= courts; t++) if (!busyCourts.has(t)) { court = t; break; }
+      let court = m.pref && open.has(m.pref) && !busyCourts.has(m.pref) ? m.pref : null;
+      if (!court) court = avail.find(t => !busyCourts.has(t)) || null;
       if (!court) break;
       m.court = court;
       busyCourts.add(court); busy.add(m.a); busy.add(m.b);
       assigned.push(m.id);
     }
     return assigned;
+  }
+
+  function courtChange(c, s, mutate, opts) {
+    if (s.status === 'closed') return fail('Séance clôturée.');
+    const sim = clone(s);
+    mutate(sim);
+    const open = new Set(availableCourts(c, sim));
+    if (!open.size) return fail('Il faut garder au moins un terrain disponible.');
+    const displaced = s.matches.filter(m => m.court && !m.done && !open.has(m.court));
+    if (displaced.length && !(opts && opts.confirm)) {
+      return fail(displaced.length + ' match(s) en cours sur un terrain retiré (' + displaced.map(m => 'terrain ' + m.court).join(', ') +
+        ') : ' + (displaced.length > 1 ? 'ils retourneront' : 'il retournera') + ' en file d\'attente, score non saisi.', { needsConfirm: true, displaced: displaced.map(m => m.id) });
+    }
+    mutate(s);
+    const assigned = autoAssign(c, s);
+    return { ok: true, assigned, displaced: displaced.map(m => m.id) };
+  }
+
+  /** Change le nombre de terrains de la séance (1 à 30). */
+  function setSessionCourts(c, s, n, opts) {
+    n = Math.floor(Number(n));
+    if (!(n >= 1 && n <= 30)) return fail('Nombre de terrains entre 1 et 30.');
+    return courtChange(c, s, x => {
+      x.courts = n;
+      x.closedCourts = (x.closedCourts || []).filter(t => t <= n);
+    }, opts);
+  }
+
+  /** Ferme (indisponible) ou rouvre un terrain précis pendant la séance. */
+  function setCourtClosed(c, s, t, closed, opts) {
+    t = Math.floor(Number(t));
+    if (!(t >= 1 && t <= totalCourts(c, s))) return fail('Terrain inexistant.');
+    return courtChange(c, s, x => {
+      const set = new Set(x.closedCourts || []);
+      if (closed) set.add(t); else set.delete(t);
+      x.closedCourts = Array.from(set).sort((a, b2) => a - b2);
+    }, opts);
   }
 
   function matchState(m) {
@@ -1116,6 +1172,7 @@
     uid, clone, isSporting, winnerOf, loserOf, validateScore, expected, sessionDeltas, computeStats, ranks,
     activeSession, createSession, presentIds, proposePlacement, setAbsent, moveToGroup, shiftPosition, placementWarnings,
     balancedGroups, groupCount, makeGroups, startSession, roundRobin, autoAssign, matchState,
+    totalCourts, availableCourts, setSessionCourts, setCourtClosed,
     recordResult, clearResult, resolve, sessionStandings, minCostPerfectMatching,
     nextRound, canNextRound, groupRanking, rankGroup, TIEBREAKS, challengeOrder, addChallenge, removeMatch,
     divisionFormat, validatePartition, describePartition, proposePartitions, seedOrder, brassageRanking,

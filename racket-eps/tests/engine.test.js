@@ -19,7 +19,8 @@ function checkCourts(c, s) {
   const active = s.matches.filter(m => m.court && !m.done);
   const courts = active.map(m => m.court);
   assert.equal(new Set(courts).size, courts.length, 'terrain utilisé deux fois');
-  assert.ok(courts.every(t => t >= 1 && t <= c.courts), 'terrain hors limite');
+  const avail = R.availableCourts(c, s);
+  assert.ok(courts.every(t => avail.includes(t)), 'terrain retiré ou fermé encore utilisé');
   const players = active.flatMap(m => [m.a, m.b]);
   assert.equal(new Set(players).size, players.length, 'élève sur deux terrains');
 }
@@ -426,4 +427,78 @@ test('Classe exemple : élèves fictifs, séances simulées valides, reproductib
   const empty = R.createDemoClass({ students: 5, sessions: 0 });
   assert.equal(empty.sessions.length, 0);
   assert.equal(empty.students.length, 5);
+});
+
+test('Terrains modifiables en cours de séance : ajout, retrait avec confirmation, fermeture d\'un terrain précis', () => {
+  const c = makeClass(16, 4);
+  const s = newSession(c, { mode: 'pools', groupSize: 4 });
+  R.startSession(c, s);
+  assert.equal(s.matches.filter(m => m.court).length, 4);
+  // Ajout : les nouveaux terrains sont occupés immédiatement si des matchs attendent
+  assert.ok(R.setSessionCourts(c, s, 6).ok);
+  checkCourts(c, s);
+  assert.equal(s.matches.filter(m => m.court && !m.done).length, 6);
+  assert.equal(c.courts, 4, 'le réglage de la classe n\'est pas modifié');
+  // Retrait : confirmation exigée car des matchs sont en cours sur les terrains 4 à 6
+  const r = R.setSessionCourts(c, s, 3);
+  assert.ok(!r.ok && r.needsConfirm && r.displaced.length === 3);
+  assert.equal(s.courts, 6, 'rien ne change sans confirmation');
+  const displaced = r.displaced;
+  assert.ok(R.setSessionCourts(c, s, 3, { confirm: true }).ok);
+  checkCourts(c, s);
+  assert.equal(s.matches.filter(m => m.court && !m.done).length, 3);
+  displaced.forEach(id => { const m = s.matches.find(x => x.id === id); assert.ok(!m.done && !m.court, 'match renvoyé en file d\'attente'); });
+  // Fermer le terrain 2 (pas forcément le dernier)
+  const on2 = s.matches.find(m => m.court === 2 && !m.done);
+  assert.ok(R.setCourtClosed(c, s, 2, true).needsConfirm);
+  assert.ok(R.setCourtClosed(c, s, 2, true, { confirm: true }).ok);
+  checkCourts(c, s);
+  assert.ok(!s.matches.some(m => m.court === 2 && !m.done));
+  assert.ok(!on2.court);
+  assert.deepEqual(R.availableCourts(c, s), [1, 3]);
+  // On ne peut pas tout fermer
+  R.setCourtClosed(c, s, 1, true, { confirm: true });
+  assert.equal(R.setCourtClosed(c, s, 3, true, { confirm: true }).ok, false);
+  // Rouvrir
+  assert.ok(R.setCourtClosed(c, s, 2, false).ok);
+  assert.ok(R.setCourtClosed(c, s, 1, false).ok);
+  assert.equal(s.matches.filter(m => m.court && !m.done).length, 3);
+  // Terrain libre (sans match) : pas de confirmation
+  playSession(c, s, rng(3));
+  assert.ok(s.matches.every(m => m.done));
+});
+
+test('Changements de terrains aléatoires pendant toute une séance : jamais de conflit, tout se termine', () => {
+  for (const f of FORMATS) {
+    const c = makeClass(13, 3);
+    const s = newSession(c, f);
+    R.startSession(c, s);
+    const r = rng(77);
+    for (let guard = 0; guard < 3000; guard++) {
+      checkCourts(c, s);
+      if (r() < 0.15) {
+        const op = r() < 0.6 ? R.setSessionCourts(c, s, 1 + Math.floor(r() * 6), { confirm: true }) : R.setCourtClosed(c, s, 1 + Math.floor(r() * R.totalCourts(c, s)), r() < 0.5, { confirm: true });
+        if (!op.ok) assert.match(op.error, /au moins un terrain/);
+        continue;
+      }
+      const active = s.matches.filter(m => m.court && !m.done);
+      if (active.length) {
+        const m = active[Math.floor(r() * active.length)];
+        assert.ok(R.recordResult(c, s, m.id, r() < 0.5 ? { sa: 11, sb: 3 } : { sa: 3, sb: 11 }).ok);
+        continue;
+      }
+      if (s.matches.some(m => !m.done && m.a && m.b)) { assert.ok(R.availableCourts(c, s).length > 0); continue; }
+      if (R.canNextRound(s).ok) { R.nextRound(c, s); continue; }
+      if (s.mode === 'reclass' && R.canBuildClassement(s).ok) { R.buildClassement(c, s, R.proposePartitions(s.positions.length)[0].sizes); continue; }
+      if (s.mode === 'challenge' && s.matches.length < 10) {
+        const o = R.challengeOrder(s);
+        const i = 1 + Math.floor(r() * (o.length - 1));
+        R.addChallenge(c, s, o[i], o[i - 1]);
+        continue;
+      }
+      break;
+    }
+    assert.ok(s.matches.every(m => m.done), f.mode + ' : séance non terminée');
+    assert.ok(R.closeSession(c, s).ok);
+  }
 });

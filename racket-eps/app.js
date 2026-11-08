@@ -102,7 +102,7 @@
   function dashboard(c) {
     const r = R.ranks(c), s = R.activeSession(c), closed = c.sessions.filter(x => x.status === 'closed').length;
     const status = s ? (s.status === 'setup' ? 'Appel et terrains à valider' : (s.reopened ? 'Séance rouverte pour correction' : 'Matchs en cours')) : '';
-    return `${demoNotice(c)}<div class="grid"><div class="stat"><b>${c.students.length}</b><small>Élèves inscrits</small></div><div class="stat"><b>${closed}</b><small>Séances clôturées</small></div><div class="stat"><b>${c.courts}</b><small>Terrains</small></div><div class="stat"><b>${c.sessions.reduce((n, x) => n + x.matches.filter(m => m.done).length, 0)}</b><small>Matchs enregistrés</small></div></div>
+    return `${demoNotice(c)}<div class="grid"><div class="stat"><b>${c.students.length}</b><small>Élèves inscrits</small></div><div class="stat"><b>${closed}</b><small>Séances clôturées</small></div><div class="stat"><b>${c.courts}</b><small>Terrains (par défaut)</small></div><div class="stat"><b>${c.sessions.reduce((n, x) => n + x.matches.filter(m => m.done).length, 0)}</b><small>Matchs enregistrés</small></div></div>
       <section class="panel" style="margin-top:16px"><h2>${s ? 'Séance en cours' : 'Prochaine séance'}</h2><p class="muted">${s ? `Séance ${s.seq} · ${R.MODES[s.mode]} · ${status}` : 'Préparez une séance, faites l\'appel puis validez les terrains avant de lancer les matchs.'}</p>
       <button class="btn primary" data-action="tab" data-tab="session">${s ? 'Reprendre la séance' : 'Préparer une séance'}</button></section>
       <section class="panel"><h2>Top 10 · Classement Elo</h2>${rankingTable(r.slice(0, 10))}</section>`;
@@ -162,7 +162,7 @@
     let placement;
     if (s.groups) {
       placement = `<p class="muted small">Proposition automatique dans l'ordre Elo (terrain/groupe 1 = meilleurs Elo). Ce placement est exactement celui qui servira à générer les matchs. Les déplacements ne modifient pas l'Elo.</p>
-        <div class="grid">${s.groups.map((g, i) => `<div class="court"><h3>${s.mode === 'ladder' ? 'Terrain' : 'Groupe'} ${i + 1}${i + 1 > c.courts ? ' <span class="badge">partage un terrain</span>' : ''}</h3>${
+        <div class="grid">${s.groups.map((g, i) => `<div class="court"><h3>${s.mode === 'ladder' ? 'Terrain' : 'Groupe'} ${i + 1}${i + 1 > R.availableCourts(c, s).length ? ' <span class="badge">partage un terrain</span>' : ''}</h3>${
           g.map(id => `<div class="player"><span>${esc(nameOf(c, id))}</span><label class="sr-only" for="mv_${id}">Groupe de ${esc(nameOf(c, id))}</label><select id="mv_${id}" data-action="move-group" data-id="${id}">${
             s.groups.map((_, j) => `<option value="${j}" ${j === i ? 'selected' : ''}>${s.mode === 'ladder' ? 'T' : 'G'}${j + 1}</option>`).join('')}<option value="${s.groups.length}">Nouveau</option></select></div>`).join('')}</div>`).join('')}</div>`;
     } else {
@@ -170,7 +170,8 @@
         <ol class="order">${s.positions.map((id, i) => `<li class="player"><span>${i + 1}. ${esc(nameOf(c, id))}</span><span><button class="btn mini" data-action="shift" data-id="${id}" data-dir="-1" aria-label="Monter ${esc(nameOf(c, id))}" ${i === 0 ? 'disabled' : ''}>↑</button><button class="btn mini" data-action="shift" data-id="${id}" data-dir="1" aria-label="Descendre ${esc(nameOf(c, id))}" ${i === s.positions.length - 1 ? 'disabled' : ''}>↓</button></span></li>`).join('')}</ol>`;
     }
     return `<section class="panel"><div class="row between"><h2>Séance ${s.seq} · Appel et terrains</h2><span class="badge">Validation obligatoire</span></div>
-      <p class="muted">${esc(s.date)} · ${R.MODES[s.mode]} · ${s.positions.length} présents / ${c.students.length} · ${c.courts} terrain(s)</p>
+      <p class="muted">${esc(s.date)} · ${R.MODES[s.mode]} · ${s.positions.length} présents / ${c.students.length}</p>
+      ${courtsStepper(c, s)}
       <h3>Appel</h3><div class="grid">${ranked.map(p => `<label class="player"><span>${esc(p.name)} · Elo ${fmt(p.elo)}</span><span><input type="checkbox" style="width:auto" data-action="absent" data-id="${p.id}" ${s.absent.includes(p.id) ? 'checked' : ''}> Absent</span></label>`).join('')}</div>
       <h3 style="margin-top:20px">Placement</h3>${placement}
       ${warnings.length ? `<div class="notice warn">${warnings.map(esc).join('<br>')}</div>` : ''}
@@ -216,14 +217,32 @@
       </div></div>`;
   }
 
+  function courtsStepper(c, s) {
+    const n = R.totalCourts(c, s), open = R.availableCourts(c, s).length;
+    return `<div class="row courts-stepper" role="group" aria-label="Terrains de la séance">
+      <span class="small"><b>Terrains disponibles</b></span>
+      <button class="btn mini" data-action="courts-step" data-delta="-1" aria-label="Retirer un terrain" ${n <= 1 ? 'disabled' : ''}>−</button>
+      <b class="courts-count" aria-live="polite">${open}${open !== n ? ' / ' + n : ''}</b>
+      <button class="btn mini" data-action="courts-step" data-delta="1" aria-label="Ajouter un terrain" ${n >= 30 ? 'disabled' : ''}>+</button>
+    </div>`;
+  }
+
   function courtsPanel(c, s) {
+    const closed = new Set(s.closedCourts || []);
     const cards = [];
-    for (let t = 1; t <= c.courts; t++) {
+    for (let t = 1; t <= R.totalCourts(c, s); t++) {
+      if (closed.has(t)) {
+        cards.push(`<div class="court closed"><h3>Terrain ${t}</h3><div class="muted">Fermé</div><button class="btn mini" data-action="court-toggle" data-court="${t}" data-closed="0">Rouvrir</button></div>`);
+        continue;
+      }
       const m = s.matches.find(x => x.court === t && !x.done);
-      cards.push(`<div class="court"><h3>Terrain ${t}</h3>${m ? `<div class="player"><b>${esc(nameOf(c, m.a))}</b></div><div class="muted small" style="text-align:center">contre</div><div class="player"><b>${esc(nameOf(c, m.b))}</b></div>` : '<div class="muted">Libre</div>'}</div>`);
+      cards.push(`<div class="court"><h3>Terrain ${t}</h3>${m ? `<div class="player"><b>${esc(nameOf(c, m.a))}</b></div><div class="muted small" style="text-align:center">contre</div><div class="player"><b>${esc(nameOf(c, m.b))}</b></div>` : '<div class="muted">Libre</div>'}
+        <button class="btn mini court-close" data-action="court-toggle" data-court="${t}" data-closed="1" aria-label="Fermer le terrain ${t}">Fermer</button></div>`);
     }
     const waiting = s.matches.filter(m => R.matchState(m) === 'waiting').length;
-    return `<section class="panel"><div class="row between"><h2>Terrains</h2><span class="muted small">${waiting} match(s) en file d'attente · un élève ne joue jamais deux matchs à la fois</span></div><div class="grid">${cards.join('')}</div></section>`;
+    return `<section class="panel"><div class="row between"><h2>Terrains</h2>${courtsStepper(c, s)}</div>
+      <p class="muted small">${waiting} match(s) en file d'attente · un élève ne joue jamais deux matchs à la fois. Ajoutez, retirez ou fermez un terrain à tout moment : les matchs sont réaffectés automatiquement (confirmation si un match en cours est concerné). Le réglage de la classe n'est pas modifié.</p>
+      <div class="grid">${cards.join('')}</div></section>`;
   }
 
   function standingsPanel(c, s) {
@@ -348,11 +367,11 @@
     const anyClosed = c.sessions.some(s => s.status === 'closed');
     return `<section class="panel"><h2>Réglages de ${esc(c.name)}</h2><div class="row">
       <div class="field"><label for="sport">Sport</label><select id="sport">${['Badminton', 'Tennis de table', 'Pickleball', 'Tennis', 'Padel', 'Autre'].map(v => `<option ${c.sport === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-      <div class="field"><label for="courts">Nombre de terrains</label><input type="number" id="courts" min="1" max="30" value="${c.courts}"></div>
+      <div class="field"><label for="courts">Nombre de terrains par défaut</label><input type="number" id="courts" min="1" max="30" value="${c.courts}"></div>
       <div class="field"><label for="k">Coefficient Elo K (par match)</label><input type="number" id="k" min="1" max="100" value="${c.k}"></div>
       <div class="field"><label for="initElo">Elo initial du cycle</label><input type="number" id="initElo" min="100" max="3000" value="${Number.isFinite(c.initialElo) ? c.initialElo : 1000}"></div></div>
       <button class="btn primary" data-action="save-settings">Enregistrer les réglages</button>
-      <p class="muted small">K est mémorisé à la création de chaque séance : le modifier n'affecte pas les séances passées. ${anyClosed ? 'Modifier l\'Elo initial recalcule tout le cycle.' : ''} Le nombre de terrains peut être changé pendant une séance : les matchs sont réaffectés automatiquement.</p></section>
+      <p class="muted small">K est mémorisé à la création de chaque séance : le modifier n'affecte pas les séances passées. ${anyClosed ? 'Modifier l\'Elo initial recalcule tout le cycle.' : ''} Le nombre de terrains par défaut s'applique aux prochaines séances ; pour la séance en cours, utilisez le réglage « Terrains disponibles » de l'onglet Séance.</p></section>
       <section class="panel"><h2>Sauvegarde et transfert</h2><div class="actions"><button class="btn" data-action="export-json">Exporter sauvegarde JSON</button><button class="btn" data-action="export-csv">Exporter classement CSV</button>
       <label class="btn">Importer sauvegarde JSON<input type="file" id="importFile" accept="application/json,.json" style="display:none"></label></div>
       <p class="muted small">Le stockage local n'est pas synchronisé entre appareils. Avant chaque enregistrement, la version précédente est gardée comme copie de secours.</p></section>
@@ -444,7 +463,7 @@
     } else {
       const name = id => esc(nameOf(c, id));
       const courts = [];
-      for (let t = 1; t <= c.courts; t++) {
+      for (const t of R.availableCourts(c, s)) {
         const m = s.matches.find(x => x.court === t && !x.done);
         courts.push(`<div class="proj-court ${m ? 'busy' : ''}"><div class="proj-t">Terrain ${t}</div>${m ? `<div class="proj-vs">${name(m.a)}<span>contre</span>${name(m.b)}</div>` : '<div class="proj-free">Libre</div>'}</div>`);
       }
@@ -574,9 +593,15 @@
       if (!Number.isInteger(n) || n < 1 || n > 30 || !Number.isFinite(k) || k < 1 || k > 100 || !Number.isFinite(e) || e < 100 || e > 3000) return toast('Réglages invalides.', true);
       if (c.sessions.some(s => s.status === 'closed') && e !== (Number.isFinite(c.initialElo) ? c.initialElo : 1000) && !confirm('Modifier l\'Elo initial recalcule tout le cycle. Continuer ?')) return;
       c.courts = n; c.k = k; c.initialElo = e; c.sport = $('sport').value;
-      const s = R.activeSession(c);
-      if (s) R.autoAssign(c, s);
       save(); render(); toast('Réglages enregistrés');
+    },
+    'courts-step': el => {
+      const c = cl(), s = R.activeSession(c);
+      act(o => R.setSessionCourts(c, s, R.totalCourts(c, s) + Number(el.dataset.delta), o), 'Terrains : ' + (R.totalCourts(c, s) + Number(el.dataset.delta)));
+    },
+    'court-toggle': el => {
+      const c = cl(), s = R.activeSession(c), closed = el.dataset.closed === '1';
+      act(o => R.setCourtClosed(c, s, Number(el.dataset.court), closed, o), 'Terrain ' + el.dataset.court + (closed ? ' fermé' : ' rouvert'));
     },
     'open-projection': () => {
       const w = window.open(location.href.split('#')[0] + '#projection', 'racket-projection');
