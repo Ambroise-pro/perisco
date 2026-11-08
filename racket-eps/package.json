@@ -1,0 +1,11 @@
+{
+  "name": "racket-eps",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Racket EPS : suivi de cycle, tournois de raquette et classement Elo (application web statique).",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:e2e": "node tests/e2e/parcours.js"
+  }
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Racket EPS : tournois de raquette, appel, terrains et classement Elo par classe. Données stockées sur l'appareil.">
+<title>Racket EPS — Suivi &amp; Elo</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div><div class="brand">🏸 Racket <span>EPS</span></div><div class="muted small">Tournois • Classements Elo • Suivi longitudinal</div></div>
+    <div class="row"><label class="sr-only" for="classSelect">Classe</label><select id="classSelect" style="width:auto"></select><button class="btn" data-action="add-class">+ Classe</button></div>
+  </header>
+  <nav class="nav" id="nav" aria-label="Sections"></nav>
+  <div id="banner"></div>
+  <main id="view"></main>
+  <footer class="muted small" style="padding:25px 0">Racket EPS · Données enregistrées sur cet appareil · Exportez régulièrement une sauvegarde JSON</footer>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

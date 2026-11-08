@@ -3,6 +3,6 @@
   "framework": null,
   "buildCommand": "",
   "installCommand": "",
-  "outputDirectory": ".",
+  "outputDirectory": "racket-eps",
   "cleanUrls": false
 }
