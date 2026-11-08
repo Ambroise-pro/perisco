@@ -3,6 +3,6 @@
   "framework": null,
   "buildCommand": "",
   "installCommand": "",
-  "outputDirectory": "tournoi-eps",
+  "outputDirectory": "racket-eps",
   "cleanUrls": false
 }

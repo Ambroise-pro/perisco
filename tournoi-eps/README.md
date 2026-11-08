@@ -73,7 +73,7 @@ Les poules se classent par victoires, puis par confrontations entre ex aequo, di
 - Les paramètres qui changeraient les appariements (têtes de série, graine, nuls, exemption, liste des joueurs) sont **verrouillés** après le démarrage. « Réinitialiser les matchs » (double confirmation) remet le tournoi en configuration en gardant joueurs et paramètres.
 
 ## Déploiement Vercel
-Site statique **sans build**. Le `vercel.json` à la racine du dépôt sert ce dossier (`outputDirectory: "tournoi-eps"`), sans installation ni compilation ; `.vercelignore` exclut les tests, les outils et `package.json`. Chaque fusion sur `main` est déployée automatiquement par l'intégration GitHub de Vercel.
+Site statique **sans build**. Le `vercel.json` à la racine du dépôt publie actuellement `racket-eps/` ; pour publier ce dossier, y mettre `"outputDirectory": "tournoi-eps"`.
 
 ## Données et persistance
 - Schéma versionné (`schemaVersion: 1`, voir `engine.js`) ; chaque enregistrement conserve la version précédente comme **copie de secours**, restaurée automatiquement si la sauvegarde principale est illisible.

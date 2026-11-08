@@ -1,4 +1,3 @@
-tournoi-eps/tests/
-tournoi-eps/tools/
-tournoi-eps/CLAUDE.md
-tournoi-eps/package.json
+racket-eps/tests/
+racket-eps/CLAUDE.md
+racket-eps/package.json

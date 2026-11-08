@@ -1,0 +1,369 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const R = require('../engine.js');
+
+// Données fictives uniquement.
+function makeClass(n, courts) {
+  const c = { id: 'c1', name: 'Classe test', sport: 'Badminton', courts: courts || 4, k: 32, students: [], sessions: [] };
+  R.addStudents(c, Array.from({ length: n }, (_, i) => 'Élève ' + String(i + 1).padStart(2, '0')));
+  return c;
+}
+
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+function checkCourts(c, s) {
+  const active = s.matches.filter(m => m.court && !m.done);
+  const courts = active.map(m => m.court);
+  assert.equal(new Set(courts).size, courts.length, 'terrain utilisé deux fois');
+  assert.ok(courts.every(t => t >= 1 && t <= c.courts), 'terrain hors limite');
+  const players = active.flatMap(m => [m.a, m.b]);
+  assert.equal(new Set(players).size, players.length, 'élève sur deux terrains');
+}
+
+/** Joue uniquement les matchs placés sur un terrain, dans un ordre aléatoire, jusqu'au bout. */
+function playSession(c, s, r, opts) {
+  opts = opts || {};
+  for (let guard = 0; guard < 5000; guard++) {
+    checkCourts(c, s);
+    const active = s.matches.filter(m => m.court && !m.done);
+    if (active.length) {
+      const m = active[Math.floor(r() * active.length)];
+      const lo = Math.floor(r() * 10);
+      const res = R.recordResult(c, s, m.id, r() < 0.5 ? { sa: 11, sb: lo } : { sa: lo, sb: 11 });
+      assert.ok(res.ok, res.error);
+      continue;
+    }
+    assert.equal(s.matches.filter(m => !m.done && m.a && m.b).length, 0, 'match prêt jamais placé sur un terrain');
+    if (R.canNextRound(s).ok) { assert.ok(R.nextRound(c, s).ok); continue; }
+    if (s.mode === 'reclass' && R.canBuildClassement(s).ok) {
+      const sizes = opts.sizes || R.proposePartitions(s.positions.length)[0].sizes;
+      assert.ok(R.buildClassement(c, s, sizes).ok);
+      continue;
+    }
+    if (s.mode === 'challenge' && (opts.challenges || 0) > 0) {
+      opts.challenges--;
+      const order = R.challengeOrder(s);
+      const i = 1 + Math.floor(r() * (order.length - 1));
+      const j = Math.max(0, i - 1 - Math.floor(r() * Math.min(s.gap, i)));
+      const res = R.addChallenge(c, s, order[i], order[j]);
+      assert.ok(res.ok, res.error);
+      continue;
+    }
+    break;
+  }
+}
+
+function newSession(c, opts) {
+  const r = R.createSession(c, opts);
+  assert.ok(r.ok, r.error);
+  return r.session;
+}
+
+/* ---------------- Elo ---------------- */
+
+test('Formule Elo et symétrie', () => {
+  assert.equal(R.expected(1000, 1000), 0.5);
+  assert.ok(Math.abs(R.expected(1200, 1000) - 1 / (1 + Math.pow(10, -200 / 400))) < 1e-12);
+  const d = R.sessionDeltas([{ a: 'A', b: 'B', sa: 11, sb: 5, done: true }], { A: 1000, B: 1000 }, 32);
+  assert.equal(d.A, 16); assert.equal(d.B, -16);
+});
+
+test('Elo figé pendant la séance, invariance à l\'ordre, conservation de la somme', () => {
+  const start = { A: 1100, B: 1000, C: 950, D: 1020 };
+  const ms = [
+    { a: 'A', b: 'B', sa: 5, sb: 11, done: true }, { a: 'C', b: 'D', sa: 11, sb: 9, done: true },
+    { a: 'A', b: 'C', sa: 11, sb: 3, done: true }, { a: 'B', b: 'D', sa: 2, sb: 11, done: true },
+    { a: 'A', b: 'D', sa: 11, sb: 7, done: true }
+  ];
+  const d1 = R.sessionDeltas(ms, start, 32);
+  const d2 = R.sessionDeltas(ms.slice().reverse(), start, 32);
+  for (const k of Object.keys(start)) assert.ok(Math.abs(d1[k] - d2[k]) < 1e-9);
+  const sum = Object.values(d1).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(sum) < 1e-9);
+  // Avec un Elo « mis à jour au fil de l'eau », A aurait un autre résultat : on vérifie qu'on utilise bien le début.
+  const ea = R.expected(1100, 950);
+  const contribAC = 32 * (1 - ea);
+  assert.ok(Math.abs(R.sessionDeltas([ms[2]], start, 32).A - contribAC) < 1e-12);
+});
+
+test('Pas d\'Elo pour : forfait, match non terminé, séance non clôturée, exemption ; absents inchangés', () => {
+  const c = makeClass(5, 2);
+  const s = newSession(c, { mode: 'swiss', rounds: 1 });
+  const absent = c.students[4].id;
+  R.setAbsent(c, s, absent, true);
+  assert.ok(R.startSession(c, s).ok);
+  assert.equal(s.matches.length, 2);
+  R.recordResult(c, s, s.matches[0].id, { forfeit: s.matches[0].a });
+  // séance non clôturée : aucun Elo
+  assert.ok(Object.values(R.computeStats(c)).every(p => p.elo === 1000));
+  R.recordResult(c, s, s.matches[1].id, { sa: 11, sb: 4 });
+  assert.ok(R.closeSession(c, s).ok);
+  const st = R.computeStats(c);
+  assert.equal(st[s.matches[0].a].elo, 1000, 'forfait : pas d\'Elo');
+  assert.equal(st[s.matches[0].b].elo, 1000);
+  assert.equal(st[s.matches[1].a].elo, 1016);
+  assert.equal(st[absent].elo, 1000);
+  assert.equal(st[absent].absences, 1);
+  assert.equal(st[s.matches[0].b].forfeitWins, 1);
+  assert.equal(st[s.matches[0].b].for, 0, 'forfait : pas de points marqués');
+});
+
+test('Correction d\'une séance passée : recalcul chronologique sans double comptage', () => {
+  const c = makeClass(4, 2);
+  const r = rng(1);
+  const s1 = newSession(c, { mode: 'pools', groupSize: 4 });
+  R.startSession(c, s1); playSession(c, s1, r); R.closeSession(c, s1);
+  const s2 = newSession(c, { mode: 'pools', groupSize: 4 });
+  R.startSession(c, s2); playSession(c, s2, r); R.closeSession(c, s2);
+  const before = R.computeStats(c);
+  // Rouvrir la séance 1, inverser un résultat, reclôturer
+  assert.ok(R.reopenSession(c, s1.id).ok);
+  const m = s1.matches[0];
+  assert.ok(R.recordResult(c, s1, m.id, { sa: m.sb, sb: m.sa }).ok);
+  assert.ok(R.closeSession(c, s1).ok);
+  const after = R.computeStats(c);
+  // Recalcul complet indépendant
+  const fresh = JSON.parse(JSON.stringify(c));
+  const again = R.computeStats(fresh);
+  for (const id of Object.keys(after)) assert.ok(Math.abs(after[id].elo - again[id].elo) < 1e-9);
+  assert.ok(Object.keys(after).some(id => Math.abs(after[id].elo - before[id].elo) > 1e-6));
+  const total = Object.values(after).reduce((a, p) => a + p.elo, 0);
+  assert.ok(Math.abs(total - 4000) < 1e-9, 'somme des Elo conservée');
+  assert.equal(after[c.students[0].id].history.length, 2);
+  assert.equal(after[c.students[0].id].played, 6);
+});
+
+test('Bug V1 corrigé : annuler une séance rouverte la restaure au lieu de la supprimer', () => {
+  const c = makeClass(4, 2);
+  const s = newSession(c, { mode: 'pools', groupSize: 4 });
+  R.startSession(c, s); playSession(c, s, rng(2)); R.closeSession(c, s);
+  const elo = R.computeStats(c);
+  R.reopenSession(c, s.id);
+  R.recordResult(c, s, s.matches[0].id, { sa: s.matches[0].sb, sb: s.matches[0].sa });
+  const res = R.cancelSession(c, s);
+  assert.ok(res.ok && res.restored);
+  assert.equal(c.sessions.length, 1);
+  assert.equal(c.sessions[0].status, 'closed');
+  const elo2 = R.computeStats(c);
+  for (const id of Object.keys(elo)) assert.equal(elo2[id].elo, elo[id].elo);
+  // Une séance jamais clôturée est bien supprimée
+  const s2 = newSession(c, { mode: 'swiss' });
+  assert.equal(R.cancelSession(c, s2).restored, false);
+  assert.equal(c.sessions.length, 1);
+});
+
+test('Une seule séance active ; validation des scores', () => {
+  const c = makeClass(4);
+  newSession(c, { mode: 'pools' });
+  assert.equal(R.createSession(c, { mode: 'pools' }).ok, false);
+  assert.match(R.validateScore(5, 5), /nul/);
+  assert.match(R.validateScore(-1, 5), /négatifs/);
+  assert.match(R.validateScore('', 5), /deux scores/);
+  assert.match(R.validateScore(2.5, 5), /entiers/);
+  assert.equal(R.validateScore('11', '3'), null);
+});
+
+/* ---------------- Groupes et terrains ---------------- */
+
+test('Bug V1 corrigé : groupes équilibrés, jamais d\'entassement dans le dernier groupe', () => {
+  const c = makeClass(24, 4);
+  const s = newSession(c, { mode: 'pools', groupSize: 4 });
+  assert.deepEqual(s.groups.map(g => g.length), [4, 4, 4, 4, 4, 4]);
+  for (const n of [5, 6, 7, 12, 25]) {
+    const ids = Array.from({ length: n }, (_, i) => 'x' + i);
+    const sizes = R.makeGroups({ mode: 'pools', groupSize: 4 }, ids).map(g => g.length);
+    assert.equal(sizes.reduce((a, b) => a + b, 0), n);
+    assert.ok(Math.max(...sizes) - Math.min(...sizes) <= 1, n + ' : ' + sizes);
+    assert.ok(sizes.every(x => x >= 3 && x <= 6), n + ' : ' + sizes);
+  }
+  const single = R.makeGroups({ mode: 'ladder', ladderType: 'single' }, ['a', 'b', 'c', 'd', 'e']);
+  assert.deepEqual(single.map(g => g.length), [2, 3]);
+});
+
+test('Le placement validé par l\'enseignant est exactement celui utilisé pour les matchs', () => {
+  const c = makeClass(8, 2);
+  const s = newSession(c, { mode: 'pools', groupSize: 4 });
+  const moved = s.groups[0][0];
+  assert.ok(R.moveToGroup(s, moved, 1).ok);
+  assert.deepEqual(s.groups.map(g => g.length), [3, 5]);
+  R.startSession(c, s);
+  const inGroup1 = s.matches.filter(m => m.group === 1).flatMap(m => [m.a, m.b]);
+  assert.ok(inGroup1.includes(moved));
+  assert.equal(s.matches.filter(m => m.group === 0).length, 3);
+  assert.equal(s.matches.filter(m => m.group === 1).length, 10);
+  // Ordre (formats sans groupes)
+  const s2 = { positions: ['a', 'b', 'c'] };
+  R.shiftPosition(s2, 'c', -1);
+  assert.deepEqual(s2.positions, ['a', 'c', 'b']);
+});
+
+const SIZES = [5, 6, 7, 12, 24, 25];
+const COURTS = [1, 2, 3, 6];
+const FORMATS = [
+  { mode: 'pools', groupSize: 4 }, { mode: 'pools', groupSize: 3, legs: 2 },
+  { mode: 'swiss', rounds: 4 }, { mode: 'ladder', ladderType: 'single', rounds: 4 },
+  { mode: 'ladder', ladderType: 'group', groupSize: 4, move: 2, rounds: 3 },
+  { mode: 'challenge', gap: 3 }, { mode: 'reclass', groupSize: 4 }
+];
+
+for (const f of FORMATS) {
+  test(`Format ${f.mode}${f.ladderType ? ' ' + f.ladderType : ''} : ${SIZES.join('/')} élèves × ${COURTS.join('/')} terrains, jamais de match simultané`, () => {
+    for (const n of SIZES) {
+      for (const courts of COURTS) {
+        const c = makeClass(n, courts);
+        const s = newSession(c, f);
+        assert.ok(R.startSession(c, s).ok);
+        playSession(c, s, rng(n * 10 + courts), { challenges: 2 * n });
+        assert.ok(s.matches.length > 0);
+        assert.ok(s.matches.every(m => m.done), `${n}/${courts} : matchs non terminés`);
+        if (f.mode === 'swiss' || f.mode === 'ladder') assert.equal(s.round, f.rounds);
+        if (f.mode === 'reclass') {
+          const places = R.reclassPlaces(s);
+          const vals = Array.from(places.values()).sort((a, b) => a - b);
+          assert.deepEqual(vals, Array.from({ length: n }, (_, i) => i + 1), `${n}/${courts} : places`);
+        }
+        assert.ok(R.closeSession(c, s).ok);
+        const st = R.computeStats(c);
+        const total = Object.values(st).reduce((a, p) => a + p.elo, 0);
+        assert.ok(Math.abs(total - 1000 * n) < 1e-6);
+      }
+    }
+  });
+}
+
+test('Ronde suisse : aucune revanche évitable, exemptions équitables et sans Elo', () => {
+  for (const n of [6, 7, 8, 9]) {
+    const c = makeClass(n, 3);
+    const s = newSession(c, { mode: 'swiss', rounds: Math.ceil(n / 2) });
+    R.startSession(c, s);
+    playSession(c, s, rng(n));
+    const keys = s.matches.map(m => [m.a, m.b].sort().join());
+    assert.equal(new Set(keys).size, keys.length, n + ' : revanche');
+    if (n % 2) {
+      const byes = s.byes.map(b => b.id);
+      assert.equal(new Set(byes).size, byes.length, 'deux exemptions pour un même élève');
+    }
+    R.closeSession(c, s);
+    const st = R.computeStats(c);
+    assert.ok(Math.abs(Object.values(st).reduce((a, p) => a + p.elo, 0) - 1000 * n) < 1e-6);
+  }
+});
+
+test('Montante-descendante individuelle : le gagnant monte, le perdant descend, terrains extrêmes gérés', () => {
+  const c = makeClass(6, 3);
+  const s = newSession(c, { mode: 'ladder', ladderType: 'single', rounds: 2 });
+  R.startSession(c, s);
+  const g = s.groups.map(x => x.slice());
+  // Sur chaque terrain, le second joueur (position basse) gagne
+  s.matches.forEach(m => R.recordResult(c, s, m.id, m.a === g.find(x => x.includes(m.a))[0] ? { sa: 3, sb: 11 } : { sa: 11, sb: 3 }));
+  assert.ok(R.nextRound(c, s).ok);
+  const winner = id => { const m = s.matches.find(x => x.round === 1 && (x.a === id || x.b === id)); return R.winnerOf(m) === id; };
+  const w1 = g[0].find(winner), l1 = g[0].find(id => !winner(id));
+  const w2 = g[1].find(winner), l3 = g[2].find(id => !winner(id));
+  assert.ok(s.groups[0].includes(w1), 'gagnant du terrain 1 reste au terrain 1');
+  assert.ok(s.groups[0].includes(w2), 'gagnant du terrain 2 monte');
+  assert.ok(s.groups[1].includes(l1), 'perdant du terrain 1 descend');
+  assert.ok(s.groups[2].includes(l3), 'perdant du dernier terrain y reste');
+  assert.ok(s.moves.some(mv => mv.id === w2 && mv.from === 2 && mv.to === 1));
+  // Elo inchangé par les déplacements (séance non clôturée)
+  assert.ok(Object.values(R.computeStats(c)).every(p => p.elo === 1000));
+});
+
+test('Montante-descendante par groupes : mini-poule complète et 2 montées/descentes', () => {
+  const c = makeClass(12, 3);
+  const s = newSession(c, { mode: 'ladder', ladderType: 'group', groupSize: 4, move: 2, rounds: 2 });
+  R.startSession(c, s);
+  assert.equal(s.matches.length, 18, '3 groupes de 4 → 6 matchs chacun');
+  const before = s.groups.map(x => x.slice());
+  s.matches.forEach(m => { const g = before.find(x => x.includes(m.a)); R.recordResult(c, s, m.id, g.indexOf(m.a) < g.indexOf(m.b) ? { sa: 11, sb: 2 } : { sa: 2, sb: 11 }); });
+  R.nextRound(c, s);
+  assert.deepEqual(s.groups[0], [before[0][0], before[0][1], before[1][0], before[1][1]]);
+  assert.deepEqual(s.groups[2], [before[1][2], before[1][3], before[2][2], before[2][3]]);
+});
+
+test('Jeu du défi : écart maximal, élève occupé, permutation', () => {
+  const c = makeClass(6, 2);
+  const s = newSession(c, { mode: 'challenge', gap: 2, permutation: 'swap' });
+  R.startSession(c, s);
+  const o = R.challengeOrder(s);
+  assert.equal(R.addChallenge(c, s, o[5], o[0]).ok, false);
+  assert.ok(R.addChallenge(c, s, o[2], o[0]).ok);
+  assert.equal(R.addChallenge(c, s, o[1], o[0]).ok, false, 'défié déjà occupé');
+  const m = s.matches[0];
+  R.recordResult(c, s, m.id, m.a === o[2] ? { sa: 11, sb: 5 } : { sa: 5, sb: 11 });
+  assert.deepEqual(R.challengeOrder(s).slice(0, 3), [o[2], o[0], o[1]]);
+  // Correction du résultat : rang local rejoué, sans permutation
+  R.recordResult(c, s, m.id, m.a === o[2] ? { sa: 5, sb: 11 } : { sa: 11, sb: 5 });
+  assert.deepEqual(R.challengeOrder(s).slice(0, 3), [o[0], o[1], o[2]]);
+});
+
+test('Reclassement : 24 élèves en 3 tableaux de 8, places 1 à 24, invalidation aval sur correction', () => {
+  const c = makeClass(24, 6);
+  const s = newSession(c, { mode: 'reclass', groupSize: 4 });
+  R.startSession(c, s);
+  playSession(c, s, rng(5), { sizes: [8, 8, 8] });
+  assert.equal(s.matches.filter(m => m.phase === 'classement').length, 36);
+  const q1 = s.matches.find(m => m.phase === 'classement' && m.division === 'A' && m.number === 1);
+  const res = R.recordResult(c, s, q1.id, { sa: q1.sb, sb: q1.sa });
+  assert.ok(res.needsConfirm && res.invalidated.length >= 2);
+  const ok = R.recordResult(c, s, q1.id, { sa: q1.sb, sb: q1.sa }, { confirm: true });
+  assert.ok(ok.ok);
+  assert.ok(s.matches.some(m => m.invalidated && !m.done));
+  assert.ok(R.reclassPlaces(s).size < 24);
+  playSession(c, s, rng(6));
+  assert.equal(R.reclassPlaces(s).size, 24);
+});
+
+/* ---------------- Persistance ---------------- */
+
+test('Migration d\'une sauvegarde V1 (terrains attribués d\'avance) sans conflit ni perte', () => {
+  const v1 = {
+    classes: [{
+      id: 'c', name: '3e B', sport: 'Badminton', courts: 2, k: 32,
+      students: ['a', 'b', 'c', 'd', 'e', 'f'].map(x => ({ id: x, name: 'Élève ' + x })),
+      sessions: [
+        { id: 's1', seq: 1, date: '2026-01-01', mode: 'pools', status: 'closed', absent: [], positions: ['a', 'b', 'c', 'd', 'e', 'f'], matches: [{ id: 'm1', a: 'a', b: 'b', sa: 11, sb: 4, done: true, round: 1, court: 1 }], round: 1, rounds: 3, groupSize: 3, k: 32 },
+        { id: 's2', seq: 2, date: '2026-01-08', mode: 'pools', status: 'playing', absent: [], positions: ['a', 'b', 'c', 'd', 'e', 'f'], round: 1, rounds: 3, groupSize: 3, k: 32,
+          matches: [['a', 'b', 1], ['a', 'c', 1], ['b', 'c', 1], ['d', 'e', 2], ['d', 'f', 2], ['e', 'f', 2]].map(([a, b, ct], i) => ({ id: 'n' + i, a, b, sa: null, sb: null, done: false, round: 1, court: ct })) }
+      ]
+    }],
+    active: 'c'
+  };
+  const before = R.computeStats(JSON.parse(JSON.stringify(v1.classes[0])));
+  const db = R.parseDB(JSON.stringify(v1));
+  assert.equal(db.schemaVersion, 2);
+  const c = db.classes[0], s = c.sessions[1];
+  checkCourts(c, s);
+  assert.equal(s.matches.filter(m => m.court).length, 2);
+  assert.deepEqual(s.groups.map(g => g.length), [3, 3]);
+  const after = R.computeStats(c);
+  for (const id of Object.keys(before)) assert.equal(after[id].elo, before[id].elo);
+  playSession(c, s, rng(9));
+  assert.ok(R.closeSession(c, s).ok);
+});
+
+test('Import : refus des structures invalides', () => {
+  assert.throws(() => R.parseDB('{"foo":1}'), /classes/);
+  assert.throws(() => R.parseDB(JSON.stringify({ schemaVersion: 99, classes: [] })), /récente/);
+  const bad = { schemaVersion: 2, classes: [{ id: 'c', name: 'X', students: [{ id: 'a', name: 'A' }], sessions: [{ id: 's', seq: 1, status: 'closed', matches: [{ a: 'a', b: 'zz' }] }] }] };
+  assert.throws(() => R.parseDB(JSON.stringify(bad)), /inconnu/);
+  const db = R.emptyDB();
+  db.classes.push(makeClass(4));
+  const back = R.parseDB(JSON.stringify(db));
+  assert.equal(back.classes[0].students.length, 4);
+});
+
+test('Élèves : doublons (casse/accents), renommage sans changer l\'identifiant', () => {
+  const c = makeClass(2);
+  const r = R.addStudents(c, ['Léa', 'lea', '  ', 'Tom']);
+  assert.equal(r.added.length, 2);
+  assert.deepEqual(r.skipped, ['lea']);
+  const id = c.students[2].id;
+  assert.ok(R.renameStudent(c, id, 'Léa B.').ok);
+  assert.equal(c.students[2].id, id);
+  assert.equal(R.renameStudent(c, id, 'tom').ok, false);
+});
