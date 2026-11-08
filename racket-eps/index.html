@@ -19,6 +19,10 @@
   <footer class="muted small" style="padding:25px 0">Racket EPS · Données enregistrées sur cet appareil · Exportez régulièrement une sauvegarde JSON</footer>
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
+<dialog id="qrDialog" aria-labelledby="qrTitle"></dialog>
+<!-- Bibliothèques QR facultatives (voir lib/README.md) : sans elles, codes texte et lecteur intégré du navigateur. -->
+<script src="lib/qrcode-generator.js"></script>
+<script src="lib/jsQR.js"></script>
 <script src="engine.js"></script>
 <script src="app.js"></script>
 </body>

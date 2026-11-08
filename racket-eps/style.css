@@ -114,3 +114,35 @@ body.projection h2{font-size:clamp(20px,2.4vw,36px);margin:2vw 0 1vw;color:#9fd8
 .court{display:flex;flex-direction:column;gap:4px}
 .court .court-close{margin-top:auto;align-self:flex-end;opacity:.8}
 .court.closed{background:#1a2532!important;border:2px dashed #4b5d70!important;color:#a7bac8}
+/* QR codes */
+#qrDialog{border:0;border-radius:16px;padding:0;background:#102436;color:#e8f0f7;max-width:min(520px,calc(100vw - 16px))}
+#qrDialog::backdrop{background:rgba(0,0,0,.6)}
+.qr-box{padding:18px;display:flex;flex-direction:column;gap:10px;align-items:center;text-align:center}
+.qr-img{background:#fff;padding:8px;border-radius:10px;line-height:0}
+.qr-img svg{max-width:min(320px,80vw);height:auto}
+.qr-link{word-break:break-all}
+.proj-row{display:flex;gap:1vw;align-items:center;justify-content:space-between}
+.proj-qr{background:#fff;padding:6px;border-radius:8px;line-height:0;flex:0 0 auto}
+.proj-qr svg{width:clamp(110px,10vw,170px);height:auto}
+/* Feuille de match (tablette) */
+body.sheet-mode .top,body.sheet-mode .nav,body.sheet-mode footer,body.sheet-mode #banner{display:none}
+.sheet{display:flex;flex-direction:column;gap:14px;max-width:640px;margin:0 auto;align-items:stretch}
+.sheet-head{color:#96aabd;font-size:16px}
+.sheet-player{background:#172f42;border-radius:14px;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.sheet-name{font-size:26px;font-weight:800;overflow-wrap:anywhere}
+.sheet-score{display:flex;align-items:center;gap:12px}
+.sheet-score output{font-size:48px;font-weight:800;min-width:2.2ch;text-align:center;font-variant-numeric:tabular-nums}
+.sheet-btn{min-width:64px;min-height:64px;font-size:30px}
+.sheet-finish{min-height:60px;font-size:20px}
+.sheet-result{font-size:24px;font-weight:800;text-align:center}
+.sheet .qr-img{align-self:center}
+.sheet-code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:20px;text-align:center;word-break:break-all;background:#081a29;padding:10px;border-radius:8px;letter-spacing:.03em}
+/* Mode scan */
+.scan-panel{position:fixed;right:12px;bottom:12px;z-index:60;width:min(320px,calc(100vw - 24px));background:#0f2233;border:2px solid #46caa8;border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+.scan-panel video{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;background:#000}
+.scan-status{font-size:13px;color:#c7d6e2}
+.scan-status.ok{color:#67e5b3;font-weight:700}
+.scan-status.err{color:#ff9eaa;font-weight:700}
+.scan-status.warn{color:#f5c04a}
+.scan-form input{flex:1;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace}
+.scan-result .notice{margin:0}

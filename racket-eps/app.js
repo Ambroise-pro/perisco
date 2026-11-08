@@ -11,6 +11,7 @@
   let db = null;
   let tab = 'dashboard', selectedStudent = null, storageError = null, partitionKey = null;
   const projection = location.hash === '#projection';
+  const sheetMode = location.hash.indexOf('#f=') === 0;
 
   /* ---------------- Persistance ---------------- */
   function load() {
@@ -30,6 +31,7 @@
   }
 
   function save() {
+    if (sheetMode || projection) return; // tablette élève / projection : lecture seule
     try {
       const prev = localStorage.getItem(KEY);
       if (prev) localStorage.setItem(KEY_BAK, prev);
@@ -76,6 +78,7 @@
 
   function render() {
     if (projection) { renderProjection(); return; }
+    if (sheetMode) { renderSheet(); return; }
     const c = cl();
     $('classSelect').innerHTML = db.classes.map(x => `<option value="${esc(x.id)}" ${x.id === db.active ? 'selected' : ''}>${esc(x.name)}</option>`).join('') || '<option value="">Aucune classe</option>';
     $('nav').innerHTML = TABS.map(([id, t]) => `<button type="button" class="${tab === id ? 'active' : ''}" aria-current="${tab === id ? 'page' : 'false'}" data-action="tab" data-tab="${id}">${t}</button>`).join('');
@@ -212,6 +215,7 @@
         ${ready ? `<details class="more"><summary>Autres actions</summary><div class="actions">
           <button class="btn" data-action="forfeit" data-id="${m.id}" data-loser="${m.a}">Forfait de ${esc(nameOf(c, m.a))}</button>
           <button class="btn" data-action="forfeit" data-id="${m.id}" data-loser="${m.b}">Forfait de ${esc(nameOf(c, m.b))}</button>
+          <button class="btn" data-action="qr-match" data-id="${m.id}">QR de la feuille de match</button>
           ${m.done ? `<button class="btn" data-action="clear" data-id="${m.id}">Effacer le résultat</button>` : ''}
           ${s.mode === 'challenge' && !m.done ? `<button class="btn danger" data-action="remove-match" data-id="${m.id}">Supprimer ce défi</button>` : ''}</div></details>` : ''}
       </div></div>`;
@@ -237,7 +241,8 @@
       }
       const m = s.matches.find(x => x.court === t && !x.done);
       cards.push(`<div class="court"><h3>Terrain ${t}</h3>${m ? `<div class="player"><b>${esc(nameOf(c, m.a))}</b></div><div class="muted small" style="text-align:center">contre</div><div class="player"><b>${esc(nameOf(c, m.b))}</b></div>` : '<div class="muted">Libre</div>'}
-        <button class="btn mini court-close" data-action="court-toggle" data-court="${t}" data-closed="1" aria-label="Fermer le terrain ${t}">Fermer</button></div>`);
+        <div class="row" style="justify-content:space-between;margin-top:auto">${m ? `<button class="btn mini" data-action="qr-match" data-id="${m.id}" aria-label="QR code du match du terrain ${t}">QR</button>` : '<span></span>'}
+        <button class="btn mini court-close" data-action="court-toggle" data-court="${t}" data-closed="1" aria-label="Fermer le terrain ${t}">Fermer</button></div></div>`);
     }
     const waiting = s.matches.filter(m => R.matchState(m) === 'waiting').length;
     return `<section class="panel"><div class="row between"><h2>Terrains</h2>${courtsStepper(c, s)}</div>
@@ -314,6 +319,8 @@
         <button class="btn" data-action="tab" data-tab="ranking">Voir l'Elo actuel</button>
         <button class="btn" data-action="open-projection">📺 Mode projection</button>
         <label class="row small" style="gap:6px"><input type="checkbox" style="width:auto" data-action="proj-standings" ${s.projShowStandings ? 'checked' : ''}> Projeter aussi le classement de la séance</label>
+        <button class="btn primary" data-action="scan-open">📷 Mode scan</button>
+        <label class="row small" style="gap:6px"><input type="checkbox" style="width:auto" data-action="proj-qr" ${s.projQr !== false ? 'checked' : ''}> QR codes des matchs en projection</label>
       </div>
       ${s.mode === 'reclass' && R.canBuildClassement(s).ok ? reclassChooser(c, s) : ''}
       ${s.mode === 'swiss' && s.lastPairing && s.lastPairing.repeats ? `<div class="notice warn">${s.lastPairing.repeats} revanche(s) inévitable(s) dans cette ronde.</div>` : ''}
@@ -375,6 +382,10 @@
       <section class="panel"><h2>Sauvegarde et transfert</h2><div class="actions"><button class="btn" data-action="export-json">Exporter sauvegarde JSON</button><button class="btn" data-action="export-csv">Exporter classement CSV</button>
       <label class="btn">Importer sauvegarde JSON<input type="file" id="importFile" accept="application/json,.json" style="display:none"></label></div>
       <p class="muted small">Le stockage local n'est pas synchronisé entre appareils. Avant chaque enregistrement, la version précédente est gardée comme copie de secours.</p></section>
+      <section class="panel"><h2>QR codes des tablettes</h2>
+      <div class="field"><label for="publicUrl">Adresse web de l'application (ouverte par les tablettes)</label><input id="publicUrl" type="url" placeholder="https://…" value="${esc(db.publicUrl || '')}"></div>
+      <p class="muted small">Adresse utilisée : <b>${esc(publicBase() || 'aucune')}</b>. Laissez vide pour utiliser l'adresse de cette page${location.protocol === 'file:' ? ' — <span class="bad">ouverte en fichier local, elle n\'est pas accessible aux tablettes : indiquez l\'adresse Vercel</span>' : ''}. ${typeof window.qrcode === 'function' ? 'Générateur de QR codes : disponible.' : '<span class="bad">Générateur de QR codes absent (dossier lib/) : seuls les liens et codes texte sont affichés.</span>'} ${scanBackend() === 'none' ? '<span class="bad">Lecture de QR par la caméra indisponible sur ce navigateur : saisie du code texte uniquement.</span>' : 'Lecture caméra : ' + (scanBackend() === 'native' ? 'lecteur intégré du navigateur' : 'jsQR') + '.'}</p>
+      <button class="btn" data-action="save-url">Enregistrer l'adresse</button></section>
       <section class="panel"><h2>Gestion</h2><button class="btn danger" data-action="delete-class">Supprimer cette classe et ses données</button></section>`;
   }
 
@@ -465,7 +476,8 @@
       const courts = [];
       for (const t of R.availableCourts(c, s)) {
         const m = s.matches.find(x => x.court === t && !x.done);
-        courts.push(`<div class="proj-court ${m ? 'busy' : ''}"><div class="proj-t">Terrain ${t}</div>${m ? `<div class="proj-vs">${name(m.a)}<span>contre</span>${name(m.b)}</div>` : '<div class="proj-free">Libre</div>'}</div>`);
+        const qr = m && s.projQr !== false && s.qrToken && publicBase() ? qrSVG(sheetURL(c, s, m), 150) : null;
+        courts.push(`<div class="proj-court ${m ? 'busy' : ''}"><div class="proj-t">Terrain ${t}</div>${m ? `<div class="proj-row"><div class="proj-vs">${name(m.a)}<span>contre</span>${name(m.b)}</div>${qr ? `<div class="proj-qr" aria-label="QR code de la feuille de match">${qr}</div>` : ''}</div>` : '<div class="proj-free">Libre</div>'}</div>`);
       }
       const queue = s.matches.map((m, i) => ({ m, i })).filter(x => R.matchState(x.m) === 'waiting').sort((a, b) => (a.m.round - b.m.round) || (a.i - b.i)).slice(0, 8).map(x => x.m);
       const roundInfo = ['swiss', 'ladder'].includes(s.mode) ? ` · ${s.mode === 'ladder' ? 'rotation' : 'ronde'} ${s.round}/${s.rounds}` : (s.mode === 'reclass' ? ' · ' + (s.phase === 'classement' ? 'tableaux de classement' : 'brassage') : '');
@@ -487,6 +499,203 @@
         ${extra}`;
     }
     $('view').innerHTML = html + `<div class="proj-tools"><button class="btn" data-action="proj-fullscreen">Plein écran (F)</button><button class="btn" data-action="proj-close">Fermer</button></div>`;
+  }
+
+  /* ---------------- QR codes : génération, feuille de match (tablette), mode scan ---------------- */
+  function publicBase() {
+    if (db && db.publicUrl) return db.publicUrl.split('#')[0];
+    return /^https?:$/.test(location.protocol) ? location.href.split('#')[0] : '';
+  }
+  function sheetURL(c, s, m) { return publicBase() + '#f=' + R.encodeSheet(R.sheetData(c, s, m)); }
+
+  // QR en SVG (générateur facultatif lib/qrcode-generator.js) ; null si indisponible.
+  function qrSVG(text, size) {
+    if (typeof window.qrcode !== 'function') return null;
+    const qr = window.qrcode(0, 'M');
+    qr.addData(text);
+    qr.make();
+    const n = qr.getModuleCount(), q = 4, tot = n + 2 * q;
+    let d = '';
+    for (let r = 0; r < n; r++) for (let col = 0; col < n; col++) if (qr.isDark(r, col)) d += 'M' + (col + q) + ' ' + (r + q) + 'h1v1h-1z';
+    return `<svg viewBox="0 0 ${tot} ${tot}" width="${size}" height="${size}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+  }
+
+  function showQRForMatch(id) {
+    const c = cl(), s = R.activeSession(c), m = s && s.matches.find(x => x.id === id);
+    if (!m) return;
+    if (!s.qrToken) { R.ensureQrToken(s); save(); }
+    const dlg = $('qrDialog');
+    const base = publicBase();
+    const url = base ? sheetURL(c, s, m) : '';
+    const svg = url ? qrSVG(url, 320) : null;
+    dlg.innerHTML = `<div class="qr-box"><h2 id="qrTitle">${m.court ? 'Terrain ' + m.court + ' · ' : ''}${esc(nameOf(c, m.a))} contre ${esc(nameOf(c, m.b))}</h2>
+      ${!base ? `<p class="bad">L'application est ouverte en fichier local : indiquez son adresse web (Réglages → QR codes) pour que les tablettes puissent ouvrir la feuille de match.</p>`
+        : (svg ? `<div class="qr-img">${svg}</div><p class="muted small">Scannez avec l'appareil photo de la tablette : la feuille de match s'ouvre, puis le résultat s'affiche en QR à présenter au mode scan.</p>`
+          : `<p class="bad">Générateur de QR codes absent (dossier lib/). Lien de la feuille de match :</p>`)}
+      ${url ? `<p class="small qr-link"><a href="${esc(url)}" target="_blank" rel="noopener">Ouvrir la feuille de match</a></p>` : ''}
+      <div class="actions"><button class="btn primary" data-action="qr-close">Fermer</button></div></div>`;
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+  }
+
+  /* --- Feuille de match sur la tablette de l'élève (#f=…) : aucune donnée de la classe --- */
+  let sheet = null;
+  function sheetKey(d) { return 'racket_eps_feuille_' + d.s + '_' + d.m; }
+  function loadSheet() {
+    let d;
+    try { d = R.decodeSheet(location.hash.slice(3)); } catch (e) { return { error: e.message }; }
+    let st = { sa: 0, sb: 0, finished: null };
+    try { st = Object.assign(st, JSON.parse(localStorage.getItem(sheetKey(d)) || '{}')); } catch (e) { /* ignore */ }
+    return { d, st };
+  }
+  function saveSheet() { try { localStorage.setItem(sheetKey(sheet.d), JSON.stringify(sheet.st)); } catch (e) { /* ignore */ } }
+
+  function renderSheet() {
+    document.body.classList.add('sheet-mode');
+    if (!sheet) sheet = loadSheet();
+    if (sheet.error) { $('view').innerHTML = `<section class="panel"><h2>Feuille de match illisible</h2><p>${esc(sheet.error)} Rescannez le QR code du match.</p></section>`; return; }
+    const { d, st } = sheet;
+    const head = `<div class="sheet-head">Séance ${esc(d.n)}${d.t ? ' · Terrain ' + esc(d.t) : ''} · score cible ${esc(d.g)}</div>`;
+    if (st.finished) {
+      let code = '', err = '';
+      try { code = R.resultCode(d, st.finished); } catch (e) { err = e.message; }
+      const svg = code ? qrSVG(code, 280) : null;
+      const label = st.finished.forfeit ? 'Forfait de ' + (st.finished.forfeit === 'a' ? d.a : d.b) : d.a + ' ' + st.finished.sa + ' – ' + st.finished.sb + ' ' + d.b;
+      $('view').innerHTML = `<section class="panel sheet">${head}<h2>Résultat à faire valider</h2><p class="sheet-result">${esc(label)}</p>
+        ${err ? `<p class="bad">${esc(err)}</p>` : `${svg ? `<div class="qr-img">${svg}</div>` : ''}<p class="sheet-code" aria-label="Code de résultat">${esc(code)}</p>
+        <p class="muted">Présentez ce QR code au professeur (mode scan)${svg ? '' : ' ou dictez-lui ce code'}.</p>`}
+        <button class="btn" data-action="sheet-edit">Modifier le score</button></section>`;
+      return;
+    }
+    const row = (side, name, val) => `<div class="sheet-player"><div class="sheet-name">${esc(name)}</div>
+      <div class="sheet-score"><button class="btn sheet-btn" data-action="sheet-step" data-side="${side}" data-delta="-1" aria-label="Retirer un point à ${esc(name)}">−</button>
+      <output aria-live="polite" aria-label="Score de ${esc(name)}">${val}</output>
+      <button class="btn sheet-btn primary" data-action="sheet-step" data-side="${side}" data-delta="1" aria-label="Ajouter un point à ${esc(name)}">+</button></div></div>`;
+    $('view').innerHTML = `<section class="panel sheet">${head}${row('a', d.a, st.sa)}${row('b', d.b, st.sb)}
+      <p class="bad" id="sheetErr" role="alert"></p>
+      <button class="btn primary sheet-finish" data-action="sheet-finish">Terminer le match</button>
+      <details class="more"><summary>Forfait</summary><div class="actions">
+        <button class="btn" data-action="sheet-forfeit" data-side="a">Forfait de ${esc(d.a)}</button>
+        <button class="btn" data-action="sheet-forfeit" data-side="b">Forfait de ${esc(d.b)}</button></div></details>
+      <p class="muted small">Le score n'est enregistré qu'après le scan par le professeur.</p></section>`;
+  }
+
+  /* --- Mode scan (appareil de l'enseignant) : petite fenêtre avec aperçu caméra --- */
+  const scan = { panel: null, stream: null, timer: null, busy: false, last: '', lastAt: 0, detector: null, auto: true };
+  function scanBackend() {
+    if (typeof window.BarcodeDetector === 'function') return 'native';
+    if (typeof window.jsQR === 'function') return 'jsqr';
+    return 'none';
+  }
+  function beep(ok) {
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = ok ? 880 : 220; g.gain.value = 0.08;
+      o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime + (ok ? 0.12 : 0.3));
+    } catch (e) { /* ignore */ }
+    if (!ok && navigator.vibrate) navigator.vibrate(200);
+  }
+  function scanStatus(msg, kind) {
+    const el = scan.panel && scan.panel.querySelector('.scan-status');
+    if (el) { el.textContent = msg; el.className = 'scan-status ' + (kind || ''); }
+  }
+  function scanResultCard(html) {
+    const el = scan.panel && scan.panel.querySelector('.scan-result');
+    if (el) el.innerHTML = html;
+  }
+
+  async function openScan() {
+    if (scan.panel) return;
+    const p = document.createElement('div');
+    p.className = 'scan-panel';
+    p.setAttribute('role', 'dialog');
+    p.setAttribute('aria-label', 'Mode scan des résultats');
+    p.innerHTML = `<div class="row between"><b>📷 Mode scan</b><button class="btn mini" data-action="scan-close" aria-label="Fermer le mode scan">✕</button></div>
+      <video playsinline muted autoplay></video>
+      <div class="scan-status" role="status" aria-live="polite">Démarrage de la caméra…</div>
+      <form class="row scan-form" data-form="scan-code"><label class="sr-only" for="scanCode">Code de résultat</label><input id="scanCode" placeholder="ou saisir le code RE1.…" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn mini" type="submit">OK</button></form>
+      <label class="row small" style="gap:6px"><input type="checkbox" style="width:auto" data-action="scan-auto" ${scan.auto ? 'checked' : ''}> Enregistrer dès la lecture</label>
+      <div class="scan-result"></div>`;
+    document.body.appendChild(p);
+    scan.panel = p;
+    const backend = scanBackend();
+    if (backend === 'none') { scanStatus('Lecture automatique non disponible sur ce navigateur : saisissez le code affiché sous le QR de la tablette.', 'warn'); p.querySelector('video').hidden = true; return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { scanStatus('Caméra inaccessible (page non sécurisée ?) : saisissez le code.', 'warn'); p.querySelector('video').hidden = true; return; }
+    try {
+      scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    } catch (e) {
+      scanStatus('Caméra refusée ou absente : autorisez-la, ou saisissez le code.', 'warn');
+      p.querySelector('video').hidden = true;
+      return;
+    }
+    if (!scan.panel) { scan.stream.getTracks().forEach(t => t.stop()); return; }
+    const video = p.querySelector('video');
+    video.srcObject = scan.stream;
+    if (backend === 'native') { try { scan.detector = new window.BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { scan.detector = null; } }
+    scanStatus('Présentez le QR code de résultat de la tablette.', '');
+    const canvas = document.createElement('canvas');
+    scan.timer = setInterval(async () => {
+      if (scan.busy || !video.videoWidth) return;
+      scan.busy = true;
+      try {
+        let text = null;
+        if (scan.detector) {
+          const codes = await scan.detector.detect(video);
+          if (codes && codes.length) text = codes[0].rawValue;
+        } else if (typeof window.jsQR === 'function') {
+          const w = Math.min(640, video.videoWidth), h = Math.round(video.videoHeight * w / video.videoWidth);
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(video, 0, 0, w, h);
+          const r = window.jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' });
+          if (r) text = r.data;
+        }
+        if (text && (text !== scan.last || Date.now() - scan.lastAt > 4000)) { scan.last = text; scan.lastAt = Date.now(); handleScanned(text); }
+      } catch (e) { /* image suivante */ }
+      scan.busy = false;
+    }, 300);
+  }
+
+  function closeScan() {
+    if (scan.timer) clearInterval(scan.timer);
+    if (scan.stream) scan.stream.getTracks().forEach(t => t.stop());
+    if (scan.panel) scan.panel.remove();
+    Object.assign(scan, { panel: null, stream: null, timer: null, detector: null, busy: false });
+  }
+
+  function describeInput(c, m, input) {
+    return input.forfeit ? 'Forfait de ' + nameOf(c, input.forfeit) + ' (' + nameOf(c, m.a) + ' – ' + nameOf(c, m.b) + ')'
+      : nameOf(c, m.a) + ' ' + input.sa + ' – ' + input.sb + ' ' + nameOf(c, m.b);
+  }
+
+  let pendingScan = null;
+  function handleScanned(text, force) {
+    const c = cl(), s = c && R.activeSession(c);
+    if (!scan.auto && !force) {
+      const p = R.parseResultCode(text);
+      if (!p.ok) { scanStatus(p.error, 'err'); beep(false); return; }
+      pendingScan = text;
+      const m = s && s.matches.find(x => R.shortId(x.id) === p.mid);
+      scanResultCard(`<div class="notice">${m ? esc(describeInput(c, m, p.forfeit ? { forfeit: p.y === 'a' ? m.a : m.b } : { sa: +p.x, sb: +p.y })) : 'Code lu'}<div class="actions"><button class="btn primary mini" data-action="scan-confirm">Enregistrer</button><button class="btn mini" data-action="scan-ignore">Ignorer</button></div></div>`);
+      scanStatus('Code lu : vérifiez puis enregistrez.', '');
+      return;
+    }
+    let res = R.applyResultCode(c, s, text);
+    if (!res.ok && res.needsConfirm) {
+      if (!confirm(res.error)) { scanStatus('Résultat existant conservé.', ''); return; }
+      res = R.applyResultCode(c, s, text, { confirm: true });
+    }
+    if (!res.ok && res.needsConfirm) {
+      // conséquences en aval (reclassement)
+      if (!confirm(res.error + '\n\nConfirmer ?')) return;
+      res = R.applyResultCode(c, s, text, { confirm: true });
+    }
+    if (!res.ok) { scanStatus(res.error, 'err'); beep(false); return; }
+    if (res.already) { scanStatus('Déjà enregistré : ' + describeInput(c, res.match, res.input), ''); return; }
+    save(); render();
+    beep(true);
+    scanStatus('✓ Enregistré', 'ok');
+    scanResultCard(`<div class="notice">✓ ${esc(describeInput(c, res.match, res.input))}<div class="actions"><button class="btn mini" data-action="scan-undo" data-id="${res.match.id}">Annuler cette saisie</button></div></div>`);
   }
 
   /* ---------------- Exports ---------------- */
@@ -603,6 +812,40 @@
       const c = cl(), s = R.activeSession(c), closed = el.dataset.closed === '1';
       act(o => R.setCourtClosed(c, s, Number(el.dataset.court), closed, o), 'Terrain ' + el.dataset.court + (closed ? ' fermé' : ' rouvert'));
     },
+    'qr-match': el => showQRForMatch(el.dataset.id),
+    'qr-close': () => { const d = $('qrDialog'); if (d.close) d.close(); else d.removeAttribute('open'); },
+    'scan-open': () => openScan(),
+    'scan-close': () => closeScan(),
+    'scan-confirm': () => { if (pendingScan) { const t = pendingScan; pendingScan = null; scanResultCard(''); handleScanned(t, true); } },
+    'scan-ignore': () => { pendingScan = null; scanResultCard(''); scanStatus('Code ignoré.', ''); },
+    'scan-undo': el => {
+      const c = cl(), s = R.activeSession(c);
+      const r = R.clearResult(c, s, el.dataset.id, { confirm: true });
+      if (!r.ok) return toast(r.error, true);
+      save(); render(); scanResultCard(''); scanStatus('Saisie annulée.', '');
+    },
+    'save-url': () => {
+      const v = $('publicUrl').value.trim();
+      if (v && !/^https?:\/\//i.test(v)) return toast('L\'adresse doit commencer par https:// ou http://', true);
+      db.publicUrl = v || null; save(); render(); toast('Adresse enregistrée');
+    },
+    'sheet-step': el => {
+      const k = el.dataset.side === 'a' ? 'sa' : 'sb';
+      sheet.st[k] = Math.max(0, Math.min(999, sheet.st[k] + Number(el.dataset.delta)));
+      saveSheet(); renderSheet();
+    },
+    'sheet-finish': () => {
+      const err = R.validateScore(sheet.st.sa, sheet.st.sb);
+      if (err) { $('sheetErr').textContent = err; return; }
+      if (!confirm('Terminer le match sur le score ' + sheet.d.a + ' ' + sheet.st.sa + ' – ' + sheet.st.sb + ' ' + sheet.d.b + ' ?')) return;
+      sheet.st.finished = { sa: sheet.st.sa, sb: sheet.st.sb }; saveSheet(); renderSheet();
+    },
+    'sheet-forfeit': el => {
+      const who = el.dataset.side === 'a' ? sheet.d.a : sheet.d.b;
+      if (!confirm('Déclarer le forfait de ' + who + ' ?')) return;
+      sheet.st.finished = { forfeit: el.dataset.side }; saveSheet(); renderSheet();
+    },
+    'sheet-edit': () => { sheet.st.finished = null; saveSheet(); renderSheet(); },
     'open-projection': () => {
       const w = window.open(location.href.split('#')[0] + '#projection', 'racket-projection');
       if (!w) toast('Fenêtre bloquée : autorisez les fenêtres surgissantes, ou ouvrez cette page avec #projection à la fin de l\'adresse.', true);
@@ -641,6 +884,8 @@
     if (el.id === 'importFile') { importJSON(el); return; }
     const c = cl();
     if (el.dataset.action === 'absent') { const s = R.activeSession(c); act(() => R.setAbsent(c, s, el.dataset.id, el.checked)); return; }
+    if (el.dataset.action === 'proj-qr') { const s = R.activeSession(c); s.projQr = el.checked; save(); return; }
+    if (el.dataset.action === 'scan-auto') { scan.auto = el.checked; return; }
     if (el.dataset.action === 'proj-standings') { const s = R.activeSession(c); s.projShowStandings = el.checked; save(); return; }
     if (el.dataset.action === 'move-group') { const s = R.activeSession(c); act(() => R.moveToGroup(s, el.dataset.id, Number(el.value))); }
   });
@@ -656,6 +901,14 @@
     if (e.target.id === 'newStudent') handlers['add-student']();
     const m = e.target.id && e.target.id.match(/^[ab]_(.+)$/);
     if (m) handlers.record({ dataset: { id: m[1] } });
+  });
+
+  document.addEventListener('submit', e => {
+    if (e.target.dataset && e.target.dataset.form === 'scan-code') {
+      e.preventDefault();
+      const input = e.target.querySelector('input');
+      if (input.value.trim()) { handleScanned(input.value.trim()); input.value = ''; }
+    }
   });
 
   async function importJSON(el) {
@@ -689,7 +942,7 @@
   window.addEventListener('hashchange', () => location.reload());
 
   window.addEventListener('storage', e => {
-    if (projection) return;
+    if (projection || sheetMode) return;
     if (e.key === KEY) { storageError = 'Les données ont été modifiées dans un autre onglet : rechargez la page avant de continuer.'; render(); }
   });
 

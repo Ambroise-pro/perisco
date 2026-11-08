@@ -302,6 +302,7 @@
     if (s.positions.length < 2) return fail('Il faut au moins 2 élèves présents.');
     if (s.groups && s.groups.some(g => g.length < 2)) return fail('Chaque groupe doit compter au moins 2 élèves.');
     s.status = 'playing';
+    ensureQrToken(s);
     s.round = 1;
     s.order = s.positions.slice(); // rang local de départ (jeu du défi, départages)
     if (s.mode === 'pools' || s.mode === 'reclass') {
@@ -993,6 +994,104 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * QR codes : aller-retour hors ligne entre tablettes élèves et appareil enseignant
+   * ------------------------------------------------------------------ *
+   * Les données restent sur l'appareil de l'enseignant (aucun serveur). Le QR d'un match ouvre
+   * sur la tablette une « feuille de match » autonome (noms, terrain, score cible) ; en fin de
+   * match, la tablette affiche un code de résultat (QR + texte court) que l'enseignant scanne.
+   * Code : RE1.<séance>.<match>.<x>.<y>.<contrôle>, avec x.y = score A.B, ou F.a / F.b (forfait
+   * du joueur A ou B). Le contrôle est une empreinte calculée avec un jeton propre à la séance :
+   * il détecte les erreurs de saisie et les codes d'une autre séance (ce n'est pas un chiffrement).
+   */
+  function shortHash(str) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    // Base 32 de Crockford (sans I, L, O, U) : lisible et dictable sans confusion.
+    const A = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+    let n = h >>> 0, out = '';
+    for (let i = 0; i < 7; i++) { out = A[n % 32] + out; n = Math.floor(n / 32); }
+    return out;
+  }
+  const shortId = id => shortHash('id:' + id).slice(0, 6);
+
+  function ensureQrToken(s) {
+    if (!s.qrToken) s.qrToken = shortHash(uid() + ':' + Math.random()).slice(0, 6);
+    return s.qrToken;
+  }
+
+  function utf8ToB64url(str) {
+    let b64;
+    if (typeof btoa === 'function') b64 = btoa(unescape(encodeURIComponent(str)));
+    else b64 = Buffer.from(str, 'utf8').toString('base64');
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function b64urlToUtf8(b) {
+    const b64 = b.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b.length + 3) % 4);
+    if (typeof atob === 'function') return decodeURIComponent(escape(atob(b64)));
+    return Buffer.from(b64, 'base64').toString('utf8');
+  }
+
+  /** Données de la feuille de match (affichée sur la tablette, sans accès à la base). */
+  function sheetData(c, s, m) {
+    const nm = id => (c.students.find(p => p.id === id) || {}).name || '?';
+    return { v: 1, s: shortId(s.id), m: shortId(m.id), a: nm(m.a), b: nm(m.b), t: m.court || null, g: s.target || 11, k: ensureQrToken(s), n: s.seq };
+  }
+  function encodeSheet(d) { return utf8ToB64url(JSON.stringify(d)); }
+  function decodeSheet(str) {
+    const d = JSON.parse(b64urlToUtf8(String(str || '')));
+    if (!d || d.v !== 1 || !d.s || !d.m || !d.k || !d.a || !d.b) throw new Error('Feuille de match illisible.');
+    return d;
+  }
+
+  /** Code de résultat produit par la tablette. r = { sa, sb } ou { forfeit: 'a' | 'b' }. */
+  function resultCode(d, r) {
+    let x, y;
+    if (r.forfeit) { x = 'F'; y = r.forfeit === 'a' ? 'a' : 'b'; }
+    else {
+      const err = validateScore(r.sa, r.sb);
+      if (err) throw new Error(err);
+      x = String(Number(r.sa)); y = String(Number(r.sb));
+    }
+    return ['RE1', d.s, d.m, x, y, shortHash([d.k, d.s, d.m, x, y].join('|'))].join('.');
+  }
+
+  function parseResultCode(text) {
+    // Tolère minuscules, espaces et confusions courantes (O→0, I/L→1).
+    const t = String(text || '').trim().replace(/\s+/g, '').toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1');
+    const parts = t.split('.');
+    if (parts.length !== 6 || parts[0] !== 'RE1') return { ok: false, error: 'Ce n\'est pas un code de résultat Racket EPS.' };
+    const [, sid, mid, x, y, h] = parts;
+    const forfeit = x.toUpperCase() === 'F';
+    if (forfeit && !/^[AB]$/.test(y)) return { ok: false, error: 'Code de forfait invalide.' };
+    if (!forfeit && (!/^\d{1,3}$/.test(x) || !/^\d{1,3}$/.test(y))) return { ok: false, error: 'Score illisible dans le code.' };
+    return { ok: true, sid, mid, x: forfeit ? 'F' : x, y: forfeit ? y.toLowerCase() : y, h, forfeit };
+  }
+
+  /**
+   * Enregistre un résultat scanné dans la séance active. Vérifie la séance, le match et le code
+   * de contrôle. Un match déjà saisi avec le même résultat est signalé sans rien modifier ; avec
+   * un résultat différent, une confirmation est demandée (opts.confirm).
+   */
+  function applyResultCode(c, s, text, opts) {
+    opts = opts || {};
+    const p = parseResultCode(text);
+    if (!p.ok) return fail(p.error);
+    if (!s || s.status !== 'playing') return fail('Aucune séance en cours.');
+    if (shortId(s.id) !== p.sid) return fail('Ce code provient d\'une autre séance.');
+    const ms = s.matches.filter(m => shortId(m.id) === p.mid);
+    if (ms.length !== 1) return fail(ms.length ? 'Code ambigu : saisissez ce résultat à la main.' : 'Match introuvable dans cette séance.');
+    const m = ms[0];
+    if (!s.qrToken || shortHash([s.qrToken, p.sid, p.mid, p.x, p.y].join('|')) !== p.h) return fail('Code de contrôle incorrect : code mal recopié ou modifié.');
+    if (!m.a || !m.b) return fail('Les joueurs de ce match ne sont pas encore connus.');
+    const input = p.forfeit ? { forfeit: p.y === 'a' ? m.a : m.b } : { sa: Number(p.x), sb: Number(p.y) };
+    const same = m.done && (input.forfeit ? m.forfeit === input.forfeit : (!m.forfeit && m.sa === input.sa && m.sb === input.sb));
+    if (same) return { ok: true, already: true, match: m, input };
+    if (m.done && !opts.confirm) return fail('Ce match a déjà un résultat différent (' + (m.forfeit ? 'forfait' : m.sa + ' – ' + m.sb) + ') : le remplacer ?', { needsConfirm: true, match: m, input });
+    const r = recordResult(c, s, m.id, input, opts);
+    return Object.assign({}, r, { match: m, input });
+  }
+
+  /* ------------------------------------------------------------------ *
    * Persistance : schéma versionné, migration, validation
    * ------------------------------------------------------------------ */
   function emptyDB() { return { schemaVersion: SCHEMA_VERSION, classes: [], active: null }; }
@@ -1178,6 +1277,7 @@
     divisionFormat, validatePartition, describePartition, proposePartitions, seedOrder, brassageRanking,
     canBuildClassement, buildClassement, reclassPlaces,
     canClose, closeSession, cancelSession, reopenSession,
+    shortHash, shortId, ensureQrToken, sheetData, encodeSheet, decodeSheet, resultCode, parseResultCode, applyResultCode,
     emptyDB, migrate, validateDB, parseDB, addStudents, renameStudent, nameKey, createDemoClass, DEMO_NAMES
   };
 });

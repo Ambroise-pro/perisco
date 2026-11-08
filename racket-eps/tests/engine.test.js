@@ -502,3 +502,52 @@ test('Changements de terrains aléatoires pendant toute une séance : jamais de 
     assert.ok(R.closeSession(c, s).ok);
   }
 });
+
+test('QR : feuille de match encodée/décodée, code de résultat vérifié puis enregistré', () => {
+  const c = makeClass(8, 2);
+  const s = newSession(c, { mode: 'pools', groupSize: 4 });
+  R.startSession(c, s);
+  const m = s.matches.find(x => x.court);
+  const d = R.decodeSheet(R.encodeSheet(R.sheetData(c, s, m)));
+  assert.equal(d.a, c.students.find(p => p.id === m.a).name);
+  assert.equal(d.t, m.court);
+  // Côté tablette : code de résultat
+  const code = R.resultCode(d, { sa: 11, sb: 7 });
+  assert.match(code, /^RE1\.[0-9A-HJKMNP-TV-Z]{6}\.[0-9A-HJKMNP-TV-Z]{6}\.11\.7\.[0-9A-HJKMNP-TV-Z]{7}$/);
+  assert.ok(R.parseResultCode(code.toLowerCase().replace(/0/g, 'o').replace(/1/g, 'l')).ok, 'saisie tolérante (minuscules, O/0, L/1)');
+  assert.throws(() => R.resultCode(d, { sa: 5, sb: 5 }), /nul/);
+  // Côté enseignant
+  const r = R.applyResultCode(c, s, code.toLowerCase());
+  assert.ok(r.ok, r.error);
+  assert.ok(m.done && m.sa === 11 && m.sb === 7);
+  assert.ok(R.applyResultCode(c, s, code).already, 'second scan : déjà enregistré, rien ne change');
+  // Résultat différent : confirmation
+  const other = R.resultCode(d, { sa: 3, sb: 11 });
+  const r2 = R.applyResultCode(c, s, other);
+  assert.ok(!r2.ok && r2.needsConfirm);
+  assert.ok(R.applyResultCode(c, s, other, { confirm: true }).ok);
+  assert.equal(m.sb, 11);
+  // Forfait
+  const m2 = s.matches.find(x => x.court && !x.done);
+  const d2 = R.decodeSheet(R.encodeSheet(R.sheetData(c, s, m2)));
+  assert.ok(R.applyResultCode(c, s, R.resultCode(d2, { forfeit: 'b' })).ok);
+  assert.equal(m2.forfeit, m2.b);
+});
+
+test('QR : codes refusés (faute de frappe, autre séance, inconnu, illisible)', () => {
+  const c = makeClass(8, 2);
+  const s = newSession(c, { mode: 'pools', groupSize: 4 });
+  R.startSession(c, s);
+  const m = s.matches.find(x => x.court);
+  const d = R.sheetData(c, s, m);
+  const code = R.resultCode(d, { sa: 11, sb: 7 });
+  assert.match(R.applyResultCode(c, s, code.replace('.11.7.', '.11.8.')).error, /contrôle/);
+  assert.match(R.applyResultCode(c, s, 'bonjour').error, /pas un code/);
+  assert.match(R.applyResultCode(c, s, code.replace(d.s, 'ZZZZZZ')).error, /autre séance/);
+  assert.match(R.applyResultCode(c, s, code.replace(d.m, 'ZZZZZZ')).error, /introuvable/);
+  assert.throws(() => R.decodeSheet('!!!'));
+  assert.ok(!m.done, 'aucun code refusé n\'a modifié le match');
+  // Le jeton est propre à la séance : un faux code avec un autre jeton est refusé
+  const forged = R.resultCode(Object.assign({}, d, { k: 'aaaaaa' }), { sa: 11, sb: 0 });
+  assert.match(R.applyResultCode(c, s, forged).error, /contrôle/);
+});

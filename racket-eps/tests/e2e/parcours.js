@@ -214,13 +214,102 @@ async function demoClass(browser) {
   await ctx.close();
 }
 
+// Petit serveur statique local : les QR codes exigent une adresse http(s), comme sur Vercel.
+function serve() {
+  const http = require('http');
+  const root = path.resolve(__dirname, '../..');
+  const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+  return new Promise(res => {
+    const srv = http.createServer((req, resp) => {
+      const f = path.join(root, decodeURIComponent(req.url.split('?')[0].split('#')[0]).replace(/^\/+/, '') || 'index.html');
+      if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { resp.writeHead(404); resp.end(); return; }
+      resp.writeHead(200, { 'Content-Type': types[path.extname(f)] || 'application/octet-stream' });
+      fs.createReadStream(f).pipe(resp);
+    }).listen(0, '127.0.0.1', () => res(srv));
+  });
+}
+
+async function qrFlow(browser) {
+  console.log('\n— QR codes : feuille de match sur tablette et mode scan');
+  const srv = await serve();
+  const BASE = 'http://127.0.0.1:' + srv.address().port + '/index.html';
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ['camera'] });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  const answers = ['8', '0'];
+  page.on('dialog', d => d.type() === 'prompt' ? d.accept(answers.shift()) : d.accept());
+  await page.goto(BASE);
+  await page.click('.top [data-action="demo-class"]');
+  await page.click('[data-tab="session"]');
+  await page.click('[data-action="create-session"]');
+  await page.click('[data-action="start-session"]');
+  await page.click('.court [data-action="qr-match"] >> nth=0');
+  await page.waitForSelector('#qrDialog[open]');
+  const href = await page.getAttribute('#qrDialog .qr-link a', 'href');
+  check(href && href.startsWith(BASE + '#f='), 'QR du match : lien vers la feuille de match (' + href.length + ' caractères)');
+  const libs = await page.evaluate(() => typeof window.qrcode === 'function');
+  check(libs ? await page.$('#qrDialog .qr-img svg') !== null : /Générateur de QR codes absent/.test(await page.innerText('#qrDialog')), libs ? 'QR code dessiné' : 'sans le générateur (lib/), lien affiché et absence signalée');
+  await page.click('[data-action="qr-close"]');
+
+  // Tablette élève
+  const tab = await browser.newContext(devices['iPad (gen 7)']);
+  const t = await tab.newPage();
+  t.on('pageerror', e => errors.push('tablette : ' + e.message));
+  t.on('dialog', d => d.accept());
+  await t.goto(href);
+  await t.waitForSelector('.sheet-player');
+  const names = await t.$$eval('.sheet-name', n => n.map(x => x.textContent));
+  for (let i = 0; i < 11; i++) await t.click('[data-action="sheet-step"][data-side="a"][data-delta="1"]');
+  for (let i = 0; i < 5; i++) await t.click('[data-action="sheet-step"][data-side="b"][data-delta="1"]');
+  await t.click('[data-action="sheet-step"][data-side="b"][data-delta="-1"]');
+  await t.reload();
+  check(await t.$$eval('.sheet-score output', o => o.map(x => x.textContent).join('-')) === '11-4', 'feuille de match : score 11-4 compté, conservé après rechargement');
+  await t.click('[data-action="sheet-finish"]');
+  const code = (await t.textContent('.sheet-code')).trim();
+  check(/^RE1\./.test(code), 'tablette : code de résultat affiché (' + code + ')');
+  await t.screenshot({ path: path.join(OUT, 'qr-tablette-resultat.png') });
+  check(await t.evaluate(() => !localStorage.getItem('racket_eps_v1')), 'la tablette n\'enregistre aucune donnée de la classe');
+
+  // Mode scan sur l'appareil de l'enseignant (caméra factice)
+  await page.click('[data-action="scan-open"]');
+  await page.waitForSelector('.scan-panel');
+  await page.waitForFunction(() => /Présentez|non disponible|refusée|inaccessible/.test(document.querySelector('.scan-status').textContent));
+  const status = await page.textContent('.scan-status');
+  check(true, 'mode scan ouvert : « ' + status.trim() + ' »');
+  const hasVideo = await page.evaluate(() => { const v = document.querySelector('.scan-panel video'); return !v.hidden && !!v.srcObject; });
+  console.log('    (aperçu caméra ' + (hasVideo ? 'actif' : 'masqué : pas de lecteur QR dans ce navigateur') + ')');
+  await page.screenshot({ path: path.join(OUT, 'qr-mode-scan.png') });
+  await page.fill('#scanCode', code.replace('.11.4.', '.11.5.'));
+  await page.press('#scanCode', 'Enter');
+  check(/contrôle/.test(await page.textContent('.scan-status')), 'code modifié refusé (contrôle)');
+  await page.fill('#scanCode', code);
+  await page.press('#scanCode', 'Enter');
+  await page.waitForFunction(() => /Enregistré/.test(document.querySelector('.scan-status').textContent));
+  const rec = await page.evaluate(n => {
+    const c = window.__racket.getDB().classes[0], s = c.sessions.find(x => x.status !== 'closed');
+    const id = x => c.students.find(p => p.name === x).id;
+    const m = s.matches.find(x => x.a === id(n[0]) && x.b === id(n[1]));
+    return m && m.done && m.sa === 11 && m.sb === 4;
+  }, names);
+  check(rec, 'résultat 11-4 enregistré dans la séance par le scan');
+  await page.fill('#scanCode', code);
+  await page.press('#scanCode', 'Enter');
+  check(/Déjà enregistré/.test(await page.textContent('.scan-status')), 'second scan du même code : rien n\'est modifié');
+  await page.click('[data-action="scan-close"]');
+  check(await page.$('.scan-panel') === null, 'mode scan fermé (caméra arrêtée)');
+  check(errors.length === 0, 'aucune erreur JavaScript' + (errors.length ? ' : ' + errors.join(' | ') : ''));
+  await tab.close(); await ctx.close(); srv.close();
+}
+
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
   try {
     await scenario(browser, 'ordinateur', { viewport: { width: 1280, height: 900 } });
     await scenario(browser, 'telephone', devices['iPhone 13']);
     await migration(browser);
     await demoClass(browser);
+    await qrFlow(browser);
     console.log('\nParcours réussis. Captures : ' + OUT);
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exit(1); });

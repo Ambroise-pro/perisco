@@ -37,6 +37,27 @@ tests/       tests du moteur (node --test) et parcours navigateur (Playwright)
 | Ronde suisse | Appariement exact de coût minimal (revanches évitées quand c'est possible). L'exemption va en priorité à un élève qui n'en a pas eu, avec 1 point de tournoi et 0 Elo. |
 | Reclassement | Brassage en poules, puis divisions en **tableaux intégraux** (2, 4, 8, 16…) ou en poules de 3, 5 ou 6. Chaque place est attribuée une fois. Corriger un match en amont invalide les matchs en aval, après confirmation. |
 
+## QR codes : autonomie des élèves sur tablette
+Les données restent **sur l'appareil de l'enseignant**, sans serveur. Les résultats passent donc par un aller-retour de QR codes :
+1. **QR du match.** Il s'affiche sur l'appareil de l'enseignant (bouton « QR » d'un terrain, ou « QR de la feuille de match » dans les actions d'un match) et, si la case est cochée, sur chaque terrain en **projection**.
+2. **Feuille de match.** L'élève scanne le QR avec l'appareil photo de sa tablette. Une page s'ouvre avec les noms, le terrain, le score cible et de grands boutons + / −. La tablette n'enregistre **aucune donnée de la classe**, seulement le score en cours de ce match (conservé si la page se recharge).
+3. **Code de résultat.** En fin de match (« Terminer le match » ou « Forfait »), la tablette affiche un QR de résultat et un code court lisible, par exemple `RE1.K3Q9ZD.8V2MXA.11.4.7QJ0B2C`.
+4. **Mode scan.** L'enseignant ouvre « 📷 Mode scan » : une petite fenêtre avec l'aperçu de la caméra lit le QR présenté. Le code peut aussi être tapé ou dicté ; la saisie tolère minuscules, O/0 et I/L/1. Le résultat est vérifié, enregistré, puis signalé par un bip, avec un bouton « Annuler cette saisie ». On peut aussi décocher « Enregistrer dès la lecture » pour valider chaque résultat à la main.
+
+Contrôles appliqués au scan :
+- le code doit appartenir à la séance en cours et au bon match ;
+- une **empreinte de contrôle**, calculée avec un jeton propre à la séance, rejette les codes mal recopiés ou modifiés (c'est une vérification, pas un chiffrement) ;
+- scanner deux fois le même code ne change rien ;
+- un résultat différent d'un score déjà saisi demande une confirmation ;
+- les conséquences en aval (tableaux de reclassement) sont confirmées comme pour une saisie manuelle.
+
+Conditions :
+- les tablettes doivent ouvrir l'application par son **adresse web**, par exemple l'adresse Vercel (Réglages → QR codes) ;
+- l'aperçu caméra exige une page en `https` ;
+- la génération des QR et la lecture caméra sur tous les navigateurs s'appuient sur deux bibliothèques libres à placer dans `lib/` (voir `lib/README.md`). Sans elles :
+  - le lien de la feuille et le code texte restent disponibles ;
+  - la caméra ne lit les QR que sur les navigateurs dotés d'un lecteur intégré (`BarcodeDetector` : Chrome sur Android, ChromeOS et macOS).
+
 ## Classe exemple (pour tester)
 Le bouton **Classe exemple** (en haut, ou sur l'écran d'accueil) crée une classe de 4 à 40 élèves **fictifs** (pseudonymes d'animaux, aucun nom réel). On peut y ajouter 0 à 12 séances déjà jouées.
 
