@@ -7,6 +7,6 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:e2e": "node tests/e2e/parcours.js",
-    "build": "node tools/build-standalone.js"
+    "standalone": "node tools/build-standalone.js"
   }
 }

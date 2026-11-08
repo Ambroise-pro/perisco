@@ -13,7 +13,7 @@ Application web pour piloter, dans un gymnase, un tournoi de sport de raquette (
 | Le plus simple : un seul fichier à copier sur une clé USB ou à envoyer | `tournoi-eps.html` (version autonome) |
 | Développement / hébergement (GitHub Pages, Vercel, serveur statique) | `index.html` + `engine.js` + `app.js` + `style.css` |
 
-Les deux versions fonctionnent en double-cliquant sur le fichier : les scripts sont des scripts classiques (pas de modules ES), donc aucune restriction du mode `file://`. La version autonome est régénérée par `node tools/build-standalone.js` (ou `npm run build`).
+Les deux versions fonctionnent en double-cliquant sur le fichier : les scripts sont des scripts classiques (pas de modules ES), donc aucune restriction du mode `file://`. La version autonome est régénérée par `node tools/build-standalone.js` (ou `npm run standalone`).
 
 > Les données sont stockées **dans le navigateur de l'appareil**. Changer de navigateur, d'appareil ou vider les données du site les fait disparaître : exportez une **sauvegarde JSON** à la fin de chaque séance. En navigation privée, l'application vous prévient que rien n'est conservé.
 
@@ -71,6 +71,9 @@ Les poules se classent par victoires, puis par confrontations entre ex aequo, di
 - **Retrait** (abandon) : le joueur n'est plus apparié au brassage. Ses matchs non joués, en brassage comme en tableau, sont perdus par forfait automatique. S'il est retiré avant la formation des divisions, il est placé en dernière tête de série. Il **conserve une place** au classement final : chaque joueur figure une fois et une seule. La réintégration annule les forfaits automatiques.
 - **Retardataire** : ajout possible pendant le brassage, entre deux rondes uniquement. Il part avec 0 point ; les départages par moyennes limitent l'effet de son retard.
 - Les paramètres qui changeraient les appariements (têtes de série, graine, nuls, exemption, liste des joueurs) sont **verrouillés** après le démarrage. « Réinitialiser les matchs » (double confirmation) remet le tournoi en configuration en gardant joueurs et paramètres.
+
+## Déploiement Vercel
+Site statique **sans build** : `vercel.json` désactive l'installation et la compilation et sert la racine du dépôt ; `.vercelignore` exclut les tests, les outils et `package.json` (qui ne contient que des scripts de développement). Chaque fusion sur `main` est déployée automatiquement par l'intégration GitHub de Vercel.
 
 ## Données et persistance
 - Schéma versionné (`schemaVersion: 1`, voir `engine.js`) ; chaque enregistrement conserve la version précédente comme **copie de secours**, restaurée automatiquement si la sauvegarde principale est illisible.
