@@ -65,6 +65,23 @@ async function scenario(browser, label, ctxOpts) {
   const playing = await page.$$eval('.match.st-playing', n => n.length);
   check(playing > 0 && playing <= 4, `${playing} match(s) en cours sur 4 terrains maximum`);
   await page.screenshot({ path: path.join(OUT, label + '-2-seance.png'), fullPage: true });
+  check(/Classement des poules/.test(await page.textContent('#view')) && /Départagé par/.test(await page.textContent('#view')), 'classement par poule avec critère de départage affiché');
+
+  // Mode projection : seconde fenêtre en lecture seule, mise à jour en direct, sans Elo
+  const proj = await ctx.newPage();
+  await proj.goto(FILE + '#projection');
+  await proj.waitForSelector('.proj-court');
+  check(await proj.$$eval('.proj-court', n => n.length) === 4, 'projection : 4 terrains affichés');
+  check(!/Elo/i.test(await proj.innerText('body')), 'projection : aucune donnée Elo affichée');
+  const projBefore = await proj.textContent('.proj-prog');
+  const firstRow = await page.$('.match.st-playing');
+  const ins = await firstRow.$$('input');
+  await ins[0].fill('11'); await ins[1].fill('4');
+  await (await firstRow.$('button[data-action="record"]')).click();
+  await proj.waitForFunction(b => document.querySelector('.proj-prog').textContent !== b, projBefore, { timeout: 5000 });
+  check(true, 'projection mise à jour automatiquement après une saisie (' + (await proj.textContent('.proj-prog')) + ')');
+  if (label === 'ordinateur') await proj.screenshot({ path: path.join(OUT, label + '-projection.png') });
+  await proj.close();
   const counter = { n: 0 };
   await playAll(page, counter);
   check(await page.evaluate(() => window.__racket.getDB().classes[0].sessions[0].matches.every(m => m.done)), 'tous les matchs de poule saisis, sans conflit');
@@ -117,6 +134,14 @@ async function scenario(browser, label, ctxOpts) {
   await page.click('[data-tab="ranking"]');
   await page.screenshot({ path: path.join(OUT, label + '-4-classement.png'), fullPage: true });
   check(/Évolution par séance/.test(await page.textContent('#view')), 'fiche élève avec évolution par séance');
+  check(await page.$$eval('#eloChart circle', n => n.length) === 2 && await page.$$eval('#rankChart circle', n => n.length) === 2, 'graphiques Elo et rang : un point par séance clôturée');
+  await page.hover('#eloChart svg', { position: { x: 30, y: 60 } });
+  await page.waitForSelector('#eloChart .tip:not([hidden])');
+  check(/Séance 1/.test(await page.textContent('#eloChart .tip')), 'survol du graphique : info-bulle de la séance la plus proche');
+  await page.focus('#rankChart');
+  await page.keyboard.press('ArrowLeft');
+  check(/Séance 1/.test(await page.textContent('#rankChart .tip')), 'graphique utilisable au clavier (flèches)');
+  await page.screenshot({ path: path.join(OUT, label + '-5-graphiques.png'), fullPage: true });
 
   for (const t of ['dashboard', 'students', 'session', 'ranking', 'history', 'settings']) {
     await page.click(`[data-tab="${t}"]`);

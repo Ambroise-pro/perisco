@@ -177,6 +177,7 @@
       gap: clampInt(opts.gap, 1, 50, 3),
       legs: opts.legs === 2 || opts.legs === '2' ? 2 : 1,
       permutation: opts.permutation === 'none' ? 'none' : 'swap',
+      tiebreak: TIEBREAKS[opts.tiebreak] ? opts.tiebreak : 'h2h-diff-pf',
       k: c.k != null ? c.k : 32,
       byes: [], moves: [], phase: mode === 'reclass' ? 'brassage' : null, divisions: []
     };
@@ -568,17 +569,70 @@
   /* ------------------------------------------------------------------ *
    * Montante-descendante
    * ------------------------------------------------------------------ */
-  function groupRanking(s, group, round) {
-    const ms = s.matches.filter(m => m.round === round && m.done && group.includes(m.a) && group.includes(m.b));
-    const st = group.map((id, i) => ({ id, i, w: 0, d: 0, pf: 0 }));
-    const get = id => st.find(x => x.id === id);
+  /*
+   * Départages configurables des groupes (poules, montante-descendante, poules de reclassement).
+   * Toujours : victoires d'abord. Puis, dans l'ordre choisi :
+   *   h2h  = confrontation directe : victoires dans les matchs entre les seuls ex aequo
+   *          (mini-classement si 3 ex aequo ou plus) ;
+   *   diff = différence de points ; pf = points marqués.
+   * Chaque critère n'est appliqué qu'aux élèves encore à égalité ; en dernier recours, l'ordre de
+   * départ du groupe (placement validé) départage de façon stable.
+   * Les anciennes séances (sans réglage) gardent le départage de la V1 : différence puis points.
+   */
+  const TIEBREAKS = {
+    'h2h-diff-pf': { label: 'Confrontation directe, puis différence, puis points marqués', order: ['h2h', 'diff', 'pf'] },
+    'diff-pf-h2h': { label: 'Différence, puis points marqués, puis confrontation directe', order: ['diff', 'pf', 'h2h'] },
+    'diff-pf': { label: 'Différence, puis points marqués', order: ['diff', 'pf'] }
+  };
+  const CRIT_LABEL = { wins: 'victoires', h2h: 'confrontation directe', diff: 'différence de points', pf: 'points marqués', pos: 'ordre de départ' };
+
+  function tiebreakOrder(s) {
+    return (TIEBREAKS[s.tiebreak] || TIEBREAKS['diff-pf']).order;
+  }
+
+  function rankGroup(s, ids, filter) {
+    const ms = s.matches.filter(m => m.done && ids.includes(m.a) && ids.includes(m.b) && (!filter || filter(m)));
+    const st = new Map(ids.map((id, i) => [id, { id, pos: i, played: 0, wins: 0, losses: 0, pf: 0, pa: 0, decidedBy: null }]));
     ms.forEach(m => {
-      const w = winnerOf(m);
-      if (w) get(w).w++;
-      if (!m.forfeit) { get(m.a).d += m.sa - m.sb; get(m.b).d += m.sb - m.sa; get(m.a).pf += m.sa; get(m.b).pf += m.sb; }
+      const w = winnerOf(m), l = loserOf(m);
+      if (!w) return;
+      st.get(m.a).played++; st.get(m.b).played++;
+      st.get(w).wins++; st.get(l).losses++;
+      if (!m.forfeit) { st.get(m.a).pf += m.sa; st.get(m.a).pa += m.sb; st.get(m.b).pf += m.sb; st.get(m.b).pa += m.sa; }
     });
-    // Victoires, différence, points marqués, puis ordre d'arrivée sur le terrain (stable).
-    return st.sort((a, b) => (b.w - a.w) || (b.d - a.d) || (b.pf - a.pf) || (a.i - b.i)).map(x => x.id);
+    const key = (crit, x, group) => {
+      if (crit === 'wins') return x.wins;
+      if (crit === 'diff') return x.pf - x.pa;
+      if (crit === 'pf') return x.pf;
+      if (crit === 'h2h') {
+        const set = new Set(group.map(g => g.id));
+        return ms.filter(m => set.has(m.a) && set.has(m.b) && winnerOf(m) === x.id).length;
+      }
+      return -x.pos;
+    };
+    // decidedBy = critère qui sépare un élève de celui classé juste devant lui.
+    const out = [];
+    (function split(group, crits) {
+      if (group.length === 1) { out.push(group[0]); return; }
+      if (!crits.length) {
+        group.sort((a, b) => a.pos - b.pos).forEach((x, i) => { if (i > 0) x.decidedBy = 'pos'; out.push(x); });
+        return;
+      }
+      const c = crits[0];
+      const buckets = new Map();
+      group.forEach(x => { const k = key(c, x, group); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(x); });
+      Array.from(buckets.keys()).sort((a, b) => b - a).forEach((k, idx) => {
+        const start = out.length;
+        split(buckets.get(k), crits.slice(1));
+        if (idx > 0) out[start].decidedBy = c;
+      });
+    })(Array.from(st.values()), ['wins'].concat(tiebreakOrder(s)));
+    out.forEach((x, i) => { x.rank = i + 1; x.diff = x.pf - x.pa; x.decidedLabel = CRIT_LABEL[x.decidedBy] || ''; });
+    return out;
+  }
+
+  function groupRanking(s, group, round) {
+    return rankGroup(s, group, m => m.round === round).map(x => x.id);
   }
 
   function generateLadderMatches(s) {
@@ -816,7 +870,7 @@
       if (d.format === 'bracket') {
         ms.filter(m => m.final && m.done).forEach(m => { places.set(winnerOf(m), m.places[0]); places.set(loserOf(m), m.places[0] + 1); });
       } else if (ms.every(m => m.done)) {
-        const sub = sessionStandings({ students: [], sessions: [] }, Object.assign({}, s, { positions: d.ids, byes: [] }), m => m.division === d.name);
+        const sub = rankGroup(s, d.ids, m => m.division === d.name);
         sub.forEach((x, i) => places.set(x.id, d.start + i));
       }
     });
@@ -983,7 +1037,7 @@
     activeSession, createSession, presentIds, proposePlacement, setAbsent, moveToGroup, shiftPosition, placementWarnings,
     balancedGroups, groupCount, makeGroups, startSession, roundRobin, autoAssign, matchState,
     recordResult, clearResult, resolve, sessionStandings, minCostPerfectMatching,
-    nextRound, canNextRound, groupRanking, challengeOrder, addChallenge, removeMatch,
+    nextRound, canNextRound, groupRanking, rankGroup, TIEBREAKS, challengeOrder, addChallenge, removeMatch,
     divisionFormat, validatePartition, describePartition, proposePartitions, seedOrder, brassageRanking,
     canBuildClassement, buildClassement, reclassPlaces,
     canClose, closeSession, cancelSession, reopenSession,

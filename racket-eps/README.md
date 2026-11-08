@@ -25,12 +25,35 @@ tests/       tests du moteur (node --test) et parcours navigateur (Playwright)
 ## Formats
 | Format | Fonctionnement |
 |---|---|
-| Poules classiques | Groupes équilibrés de 3 à 6 (écart ≤ 1), aller simple ou aller-retour, tours organisés par la méthode du cercle. |
+| Poules classiques | Groupes équilibrés de 3 à 6 (écart ≤ 1), aller simple ou aller-retour, tours organisés par la méthode du cercle. Classement par poule : victoires, puis **départage configurable** (voir ci-dessous). |
 | Jeu du défi | Défi contre un élève à au plus *n* rangs locaux. On ne peut pas lancer un défi si l'un des deux élèves est déjà engagé. Avec la permutation activée, le défiant vainqueur prend la place du défié (rang local rejoué après chaque correction). |
 | Montante-descendante individuelle | 2 élèves par terrain (3 sur le dernier si l'effectif est impair). Le gagnant monte, le perdant descend ; au terrain 1, personne ne monte, et au dernier terrain, personne ne descend. |
 | Montante-descendante par groupes | Mini-poule complète par terrain, avec 1 ou 2 montées et descentes. Les déplacements sont affichés (↑/↓) et ne touchent pas l'Elo. |
 | Ronde suisse | Appariement exact de coût minimal (revanches évitées quand c'est possible). L'exemption va en priorité à un élève qui n'en a pas eu, avec 1 point de tournoi et 0 Elo. |
 | Reclassement | Brassage en poules, puis divisions en **tableaux intégraux** (2, 4, 8, 16…) ou en poules de 3, 5 ou 6. Chaque place est attribuée une fois. Corriger un match en amont invalide les matchs en aval, après confirmation. |
+
+## Départage dans les groupes
+Il s'applique aux poules, à la montante-descendante et aux poules de reclassement. On classe d'abord par victoires, puis on applique, au choix lors de la création de la séance :
+- confrontation directe, puis différence de points, puis points marqués (par défaut) ;
+- différence, puis points marqués, puis confrontation directe ;
+- différence, puis points marqués.
+
+La **confrontation directe** compte les victoires dans les matchs entre les seuls ex aequo, ce qui fait un mini-classement à 3 ex aequo ou plus. Chaque critère ne départage que les élèves encore à égalité ; en dernier recours, c'est l'ordre de départ validé. La colonne « Départagé par » indique le critère qui sépare un élève de celui classé juste devant lui. Les séances créées avec la V1 gardent leur ancien départage (différence, puis points).
+
+## Mode projection
+Dans la séance, le bouton **📺 Mode projection** ouvre une seconde fenêtre (même page, adresse terminée par `#projection`) à afficher au vidéoprojecteur :
+- terrains en très grand, puis matchs « À suivre » ;
+- pour la montante-descendante, placement de la rotation avec ↑/↓ ;
+- plein écran avec la touche F.
+
+La fenêtre est **en lecture seule**. Elle se met à jour toute seule, sous 2 secondes, à chaque saisie faite dans la fenêtre principale. Elle **n'affiche jamais l'Elo ni les statistiques**. Le classement de la séance n'est projeté que si l'enseignant coche « Projeter aussi le classement de la séance ».
+
+## Graphiques d'évolution
+La fiche élève présente deux graphiques SVG, en plus du tableau qui reste disponible :
+- l'**Elo** séance par séance, avec une ligne pointillée pour l'Elo initial ;
+- le **rang dans la classe**, la 1ʳᵉ place en haut.
+
+Les points creux marquent les séances d'absence. Une info-bulle s'affiche au survol, et les flèches du clavier parcourent les points quand le graphique a le focus. Les deux mesures sont sur deux graphiques séparés (jamais de double axe).
 
 ## Corrections par rapport au prototype V1
 1. Annuler une séance **rouverte** la supprimait définitivement : elle est maintenant restaurée.
@@ -56,7 +79,6 @@ npm run test:e2e  # navigateur (Playwright à installer séparément) : ordinate
 ```
 
 ## Limites connues
-- Départages des poules : différence de points, puis points marqués, puis position de départ. La confrontation directe n'est pas encore proposée.
 - Les durées de séance et de rotation ne sont pas gérées : seul le nombre de rotations est réglable.
-- Pas encore de mode projection dédié ni de graphiques d'évolution (priorités 4 et 5 du cahier des charges). Les fiches élèves présentent l'évolution sous forme de tableau.
+- La projection se synchronise sur le même appareil (deux fenêtres du même navigateur), pas entre deux appareils différents.
 - Données stockées sur l'appareil uniquement, sans synchronisation.
