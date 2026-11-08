@@ -221,6 +221,52 @@
       </div></div>`;
   }
 
+  /* ---------------- Terrains dessinés selon le sport de la classe ---------------- */
+  // Tracés vus de dessus, aux proportions réglementaires (filet vertical au centre).
+  const SPORTS_ART = {
+    badminton: { surround: '#1d4f3d', pos: [26, 74], svg: '<svg viewBox="-12 -12 158 85" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><rect width="134" height="61" fill="#2f7d5b"/><g fill="none" stroke="#fff" stroke-width=".8"><rect width="134" height="61"/><path d="M0 4.6H134M0 56.4H134M47.2 0V61M86.8 0V61M7.6 0V61M126.4 0V61M0 30.5H47.2M86.8 30.5H134"/></g><path d="M67-4V65" stroke="#e6edf2" stroke-width="1.6" stroke-dasharray="1.2 .8"/><circle cx="67" cy="-4" r="1.4" fill="#e6edf2"/><circle cx="67" cy="65" r="1.4" fill="#e6edf2"/></svg>' },
+    tt: { surround: '#7a3529', pos: [12, 88], svg: '<svg viewBox="0 0 400 200" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><rect x="100" y="46" width="200" height="111" rx="2" fill="#1f4e8c" stroke="#fff" stroke-width="3"/><path d="M100 101.5H300" stroke="#fff" stroke-width="1.2"/><rect x="198" y="38" width="4" height="127" fill="#d9e2ea"/><rect x="196" y="34" width="8" height="8" rx="1.5" fill="#44525e"/><rect x="196" y="161" width="8" height="8" rx="1.5" fill="#44525e"/><rect x="110" y="157" width="6" height="18" fill="#2a2f35"/><rect x="284" y="157" width="6" height="18" fill="#2a2f35"/></svg>' },
+    pickleball: { surround: '#1f4f78', pos: [26, 74], svg: '<svg viewBox="-12 -12 158 85" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><rect width="134" height="61" fill="#2c6fa3"/><rect x="45.7" width="42.6" height="61" fill="#3a8f6a"/><g fill="none" stroke="#fff" stroke-width=".8"><rect width="134" height="61"/><path d="M45.7 0V61M88.3 0V61M0 30.5H45.7M88.3 30.5H134"/></g><path d="M67-4V65" stroke="#e6edf2" stroke-width="1.6"/></svg>' },
+    tennis: { surround: '#2f6e49', pos: [26, 74], svg: '<svg viewBox="-18 -16 273.7 141.7" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><rect width="237.7" height="109.7" fill="#2b5f9e"/><g fill="none" stroke="#fff" stroke-width="1.2"><rect width="237.7" height="109.7"/><path d="M0 13.7H237.7M0 96H237.7M54.85 13.7V96M182.85 13.7V96M54.85 54.85H182.85M0 54.85H3M234.7 54.85H237.7"/></g><path d="M118.85-6V115.7" stroke="#e6edf2" stroke-width="2.4"/></svg>' },
+    padel: { surround: '#16325a', pos: [26, 74], svg: '<svg viewBox="-10 -10 220 120" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><rect width="200" height="100" fill="#2a5aa0"/><path d="M30.5 0V100M169.5 0V100M28.5 50H171.5" fill="none" stroke="#fff"/><rect x="-2.5" y="-2.5" width="205" height="105" fill="none" stroke="#cfe3ef" stroke-width="4" stroke-opacity=".85"/><path d="M40-4.5V-.5M80-4.5V-.5M120-4.5V-.5M160-4.5V-.5M40 100.5V104.5M80 100.5V104.5M120 100.5V104.5M160 100.5V104.5" stroke="#091522" stroke-width="1.4"/><path d="M100-4V104" stroke="#e6edf2" stroke-width="2"/></svg>' },
+    generic: { surround: '#22384b', pos: [26, 74], svg: '<svg viewBox="-12 -12 158 85" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><rect width="134" height="61" fill="#35566f"/><rect width="134" height="61" fill="none" stroke="#fff" stroke-width=".8"/><path d="M67-4V65" stroke="#e6edf2" stroke-width="1.6"/></svg>' }
+  };
+  const SPORT_KEYS = { 'Badminton': 'badminton', 'Tennis de table': 'tt', 'Pickleball': 'pickleball', 'Tennis': 'tennis', 'Padel': 'padel' };
+  const sportKey = c => SPORT_KEYS[c && c.sport] || 'generic';
+  const initials = n => String(n || '').split(/\s+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+  /**
+   * Terrain dessiné avec les élèves placés dessus.
+   * o = { left: [ids], right: [ids], state: 'playing'|'free'|'closed'|'group', big, clickable }
+   * Joueur A à gauche du filet, joueur B à droite (au tennis de table : en bout de table).
+   */
+  function courtDrawing(c, o) {
+    const key = sportKey(c), art = SPORTS_ART[key];
+    const chip = (id, side) => {
+      const n = nameOf(c, id);
+      const label = o.clickable ? `<button type="button" class="cd-name" data-action="student" data-id="${id}">${esc(n)}</button>` : `<span class="cd-name">${esc(n)}</span>`;
+      return `<span class="cd-player side-${side}"><span class="cd-dot" aria-hidden="true">${esc(initials(n))}</span>${label}</span>`;
+    };
+    const col = (ids, side, x) => ids.length ? `<div class="cd-side" style="left:${x}%">${ids.map(id => chip(id, side)).join('')}</div>` : '';
+    const n = (o.left || []).length + (o.right || []).length;
+    let overlay = '';
+    if (o.state === 'free') overlay = '<div class="cd-overlay"><span class="cd-tag">Libre</span></div>';
+    if (o.state === 'closed') overlay = '<div class="cd-overlay closed"><span class="cd-tag dashed">Fermé</span></div>';
+    return `<div class="court-draw ${o.big ? 'big' : ''} ${n > 4 ? 'crowded' : ''} ${o.state === 'closed' ? 'is-closed' : ''}" data-sport="${key}" style="background:${art.surround}">
+      <div class="cd-art">${art.svg}</div>
+      ${o.state === 'closed' || o.state === 'free' ? '' : col(o.left || [], 'a', art.pos[0]) + col(o.right || [], 'b', art.pos[1])}
+      ${overlay}</div>`;
+  }
+
+  // Remplaçants d'un groupe (poules, montante-descendante par groupes) qui attendent pendant ce match.
+  // (sans les élèves de ce groupe qui jouent déjà sur un autre terrain).
+  function benchFor(s, m) {
+    if (!s.groups || m.group == null || !s.groups[m.group]) return [];
+    const busy = new Set();
+    s.matches.forEach(x => { if (x.court && !x.done) { busy.add(x.a); busy.add(x.b); } });
+    return s.groups[m.group].filter(id => id !== m.a && id !== m.b && !busy.has(id));
+  }
+
   function courtsStepper(c, s) {
     const n = R.totalCourts(c, s), open = R.availableCourts(c, s).length;
     return `<div class="row courts-stepper" role="group" aria-label="Terrains de la séance">
@@ -236,18 +282,26 @@
     const cards = [];
     for (let t = 1; t <= R.totalCourts(c, s); t++) {
       if (closed.has(t)) {
-        cards.push(`<div class="court closed"><h3>Terrain ${t}</h3><div class="muted">Fermé</div><button class="btn mini" data-action="court-toggle" data-court="${t}" data-closed="0">Rouvrir</button></div>`);
+        cards.push(`<div class="court-card is-closed"><div class="cc-head"><h3>Terrain ${t}</h3><span class="badge cc-closed">Fermé</span></div>
+          ${courtDrawing(c, { state: 'closed' })}
+          <div class="cc-foot"><span class="muted small">Terrain fermé pour la séance</span><div class="actions"><button class="btn mini" data-action="court-toggle" data-court="${t}" data-closed="0">Rouvrir</button></div></div></div>`);
         continue;
       }
       const m = s.matches.find(x => x.court === t && !x.done);
-      cards.push(`<div class="court"><h3>Terrain ${t}</h3>${m ? `<div class="player"><b>${esc(nameOf(c, m.a))}</b></div><div class="muted small" style="text-align:center">contre</div><div class="player"><b>${esc(nameOf(c, m.b))}</b></div>` : '<div class="muted">Libre</div>'}
-        <div class="row" style="justify-content:space-between;margin-top:auto">${m ? `<button class="btn mini" data-action="qr-match" data-id="${m.id}" aria-label="QR code du match du terrain ${t}">QR</button>` : '<span></span>'}
-        <button class="btn mini court-close" data-action="court-toggle" data-court="${t}" data-closed="1" aria-label="Fermer le terrain ${t}">Fermer</button></div></div>`);
+      const bench = m ? benchFor(s, m) : [];
+      cards.push(`<div class="court-card"><div class="cc-head"><h3>Terrain ${t}</h3><span class="badge ${m ? 'cc-on' : ''}">${m ? 'En cours' : 'Libre'}</span></div>
+        ${m ? courtDrawing(c, { left: [m.a], right: [m.b], state: 'playing', clickable: true }) : courtDrawing(c, { state: 'free' })}
+        <div class="cc-foot">
+          <span class="muted small">${m ? esc(matchLabel(c, s, m)) : 'En attente du prochain match de la file'}</span>
+          ${bench.length ? `<div class="cc-bench"><span class="small muted">Sur le banc</span>${bench.map(id => `<span class="bench-chip">${esc(nameOf(c, id))}</span>`).join('')}</div>` : ''}
+          <div class="actions">${m ? `<button class="btn mini primary" data-action="focus-match" data-id="${m.id}">Saisir le score</button><button class="btn mini" data-action="qr-match" data-id="${m.id}" aria-label="QR code du match du terrain ${t}">QR</button>` : ''}
+          <button class="btn mini court-close" data-action="court-toggle" data-court="${t}" data-closed="1" aria-label="Fermer le terrain ${t}">Fermer</button></div>
+        </div></div>`);
     }
     const waiting = s.matches.filter(m => R.matchState(m) === 'waiting').length;
-    return `<section class="panel"><div class="row between"><h2>Terrains</h2>${courtsStepper(c, s)}</div>
-      <p class="muted small">${waiting} match(s) en file d'attente · un élève ne joue jamais deux matchs à la fois. Ajoutez, retirez ou fermez un terrain à tout moment : les matchs sont réaffectés automatiquement (confirmation si un match en cours est concerné). Le réglage de la classe n'est pas modifié.</p>
-      <div class="grid">${cards.join('')}</div></section>`;
+    return `<section class="panel"><div class="row between"><h2>Terrains de ${esc((c.sport || 'jeu').toLowerCase())}</h2>${courtsStepper(c, s)}</div>
+      <p class="muted small">${waiting} match(s) en file d'attente · chaque élève est placé dans sa moitié de terrain ; les remplaçants du groupe attendent sur le banc. Un élève ne joue jamais deux matchs à la fois. Ajoutez, retirez ou fermez un terrain à tout moment (confirmation si un match en cours est concerné). Le dessin suit le sport de la classe (Réglages).</p>
+      <div class="courts-grid">${cards.join('')}</div></section>`;
   }
 
   function standingsPanel(c, s) {
@@ -392,10 +446,12 @@
     let result = '<div class="empty">Choisissez le nombre de terrains puis « Répartir ».</div>';
     if (wg && wg.groups.length) {
       const stats = R.workGroupStats(c);
-      result = `<div class="grid">${wg.groups.map((g, i) => `<div class="court"><h3>Terrain ${i + 1}</h3>
-          <div class="muted small">${g.length} élève(s) · Elo moyen ${fmt(stats.groups[i].avg)}</div>
+      result = `<div class="courts-grid">${wg.groups.map((g, i) => { const sorted = g.slice().sort((x, y) => rankOf.get(x) - rankOf.get(y)); return `<div class="court-card wg-card"><div class="cc-head"><h3>Terrain ${i + 1}</h3><span class="badge">${g.length} élève(s)</span></div>
+          ${courtDrawing(c, { left: sorted.filter((_, k) => k % 2 === 0), right: sorted.filter((_, k) => k % 2 === 1), state: 'group', clickable: true })}
+          <div class="cc-foot"><div class="muted small">Elo moyen ${fmt(stats.groups[i].avg)}</div>
+          <details class="wg-move"><summary>Déplacer un élève</summary>
           ${g.slice().sort((x, y) => rankOf.get(x) - rankOf.get(y)).map(id => `<div class="player"><button class="btn linkish" data-action="student" data-id="${id}">${rankOf.get(id)}. ${esc(nameOf(c, id))}</button>
-            <label class="sr-only" for="wg_${id}">Terrain de ${esc(nameOf(c, id))}</label><select id="wg_${id}" data-action="wg-move" data-id="${id}">${wg.groups.map((_, j) => `<option value="${j}" ${j === i ? 'selected' : ''}>T${j + 1}</option>`).join('')}</select></div>`).join('')}</div>`).join('')}</div>
+            <label class="sr-only" for="wg_${id}">Terrain de ${esc(nameOf(c, id))}</label><select id="wg_${id}" data-action="wg-move" data-id="${id}">${wg.groups.map((_, j) => `<option value="${j}" ${j === i ? 'selected' : ''}>T${j + 1}</option>`).join('')}</select></div>`).join('')}</details></div></div>`; }).join('')}</div>
         <p class="muted small">Écart entre l'Elo moyen le plus haut et le plus bas : <b>${fmt(stats.spread)}</b>${mode === 'balanced' ? ' (plus il est faible, plus les terrains sont de niveau comparable)' : ''}. Les déplacements manuels sont conservés jusqu'à la prochaine répartition. Les groupes ne modifient jamais l'Elo.</p>`;
     }
     return `${demoNotice(c)}<section class="panel"><h2>Groupes de travail</h2>
@@ -424,7 +480,7 @@
   function settings(c) {
     const anyClosed = c.sessions.some(s => s.status === 'closed');
     return `<section class="panel"><h2>Réglages de ${esc(c.name)}</h2><div class="row">
-      <div class="field"><label for="sport">Sport</label><select id="sport">${['Badminton', 'Tennis de table', 'Pickleball', 'Tennis', 'Padel', 'Autre'].map(v => `<option ${c.sport === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+      <div class="field"><label for="sport">Sport (dessin des terrains)</label><select id="sport">${['Badminton', 'Tennis de table', 'Pickleball', 'Tennis', 'Padel', 'Autre'].map(v => `<option ${c.sport === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
       <div class="field"><label for="courts">Nombre de terrains par défaut</label><input type="number" id="courts" min="1" max="30" value="${c.courts}"></div>
       <div class="field"><label for="k">Coefficient Elo K (par match)</label><input type="number" id="k" min="1" max="100" value="${c.k}"></div>
       <div class="field"><label for="initElo">Elo initial du cycle</label><input type="number" id="initElo" min="100" max="3000" value="${Number.isFinite(c.initialElo) ? c.initialElo : 1000}"></div></div>
@@ -528,7 +584,10 @@
       for (const t of R.availableCourts(c, s)) {
         const m = s.matches.find(x => x.court === t && !x.done);
         const qr = m && s.projQr !== false && s.qrToken && publicBase() ? qrSVG(sheetURL(c, s, m), 150) : null;
-        courts.push(`<div class="proj-court ${m ? 'busy' : ''}"><div class="proj-t">Terrain ${t}</div>${m ? `<div class="proj-row"><div class="proj-vs">${name(m.a)}<span>contre</span>${name(m.b)}</div>${qr ? `<div class="proj-qr" aria-label="QR code de la feuille de match">${qr}</div>` : ''}</div>` : '<div class="proj-free">Libre</div>'}</div>`);
+        const bench = m ? benchFor(s, m) : [];
+        courts.push(`<div class="proj-court ${m ? 'busy' : ''}"><div class="proj-row"><div class="proj-t">Terrain ${t}</div>${qr ? `<div class="proj-qr" aria-label="QR code de la feuille de match">${qr}</div>` : ''}</div>
+          ${m ? courtDrawing(c, { left: [m.a], right: [m.b], state: 'playing', big: true }) : courtDrawing(c, { state: 'free', big: true })}
+          ${bench.length ? `<div class="proj-bench">Sur le banc : ${bench.map(name).join(', ')}</div>` : ''}</div>`);
       }
       const queue = s.matches.map((m, i) => ({ m, i })).filter(x => R.matchState(x.m) === 'waiting').sort((a, b) => (a.m.round - b.m.round) || (a.i - b.i)).slice(0, 8).map(x => x.m);
       const roundInfo = ['swiss', 'ladder'].includes(s.mode) ? ` · ${s.mode === 'ladder' ? 'rotation' : 'ronde'} ${s.round}/${s.rounds}` : (s.mode === 'reclass' ? ' · ' + (s.phase === 'classement' ? 'tableaux de classement' : 'brassage') : '');
@@ -856,6 +915,12 @@
       act(o => R.setCourtClosed(c, s, Number(el.dataset.court), closed, o), 'Terrain ' + el.dataset.court + (closed ? ' fermé' : ' rouvert'));
     },
     'qr-match': el => showQRForMatch(el.dataset.id),
+    'focus-match': el => {
+      const input = $('a_' + el.dataset.id);
+      if (!input) return;
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => input.focus({ preventScroll: true }), 300);
+    },
     'qr-close': () => { const d = $('qrDialog'); if (d.close) d.close(); else d.removeAttribute('open'); },
     'scan-open': () => openScan(),
     'scan-close': () => closeScan(),

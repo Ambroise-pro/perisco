@@ -155,3 +155,46 @@ body.sheet-mode .top,body.sheet-mode .nav,body.sheet-mode footer,body.sheet-mode
 @media print{#studentDialog,#qrDialog{display:none}}
 .player .btn.linkish{color:#163342;min-height:32px;font-weight:600}
 .court .muted{color:#dbe9f0}
+/* Terrains dessinés selon le sport */
+.courts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:14px}
+.court-card{background:#0f2233;border:1px solid #274157;border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+.cc-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 14px}
+.cc-head h3{margin:0;font-size:17px}
+.cc-head .badge.cc-on{background:#1d977e;color:#fff}
+.cc-head .badge.cc-closed{background:#3a2a2e;color:#ffb3bd}
+.cc-foot{display:flex;flex-direction:column;gap:8px;padding:10px 14px 14px}
+.cc-foot .actions{align-items:center}
+.cc-foot .court-close{margin-left:auto}
+.cc-bench{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bench-chip{background:#1c3a52;color:#e8f0f7;border:1px solid #345064;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600}
+.court-draw{position:relative;height:200px;overflow:hidden}
+.court-draw.big{height:clamp(200px,24vh,300px);border-radius:12px}
+.cd-art{position:absolute;inset:0}
+.cd-art svg{width:100%;height:100%;display:block}
+.court-draw.is-closed .cd-art{filter:grayscale(1);opacity:.35}
+.cd-side{position:absolute;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;gap:8px;align-items:center;max-height:100%}
+.cd-player{display:flex;flex-direction:column;align-items:center;gap:4px}
+.cd-dot{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#0b1a28;box-shadow:0 0 0 3px rgba(9,21,34,.55)}
+.side-a .cd-dot{background:#f5c04a}
+.side-b .cd-dot{background:#9ad7ff}
+.cd-name{background:#fff;color:#102436;border:0;border-radius:999px;padding:3px 10px;font:inherit;font-weight:700;font-size:13px;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+button.cd-name{cursor:pointer;min-height:28px}
+button.cd-name:hover{background:#e6f6f1}
+.court-draw.crowded .cd-player{flex-direction:row;gap:4px}
+.court-draw.crowded .cd-dot{width:22px;height:22px;font-size:10px;box-shadow:0 0 0 2px rgba(9,21,34,.55)}
+.court-draw.crowded .cd-side{gap:5px}
+.court-draw.crowded .cd-name{font-size:12px;padding:2px 8px;max-width:110px}
+.court-draw.big .cd-dot{width:clamp(36px,3.4vw,56px);height:clamp(36px,3.4vw,56px);font-size:clamp(14px,1.3vw,22px)}
+.court-draw.big .cd-name{font-size:clamp(16px,1.8vw,30px);padding:4px 16px;max-width:none}
+.cd-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.cd-overlay.closed{background:repeating-linear-gradient(135deg,rgba(9,21,34,.55) 0 10px,rgba(9,21,34,.2) 10px 20px)}
+.cd-tag{background:rgba(9,21,34,.8);color:#e8f0f7;border-radius:12px;padding:8px 16px;font-weight:700}
+.cd-tag.dashed{background:#0b1a28;border:2px dashed #6b8396}
+.court-draw.big .cd-tag{font-size:clamp(18px,2vw,32px)}
+.wg-card .wg-move summary{font-size:13px;color:#c3d3df}
+.wg-card .wg-move .player{margin:4px 0}
+.proj-court{display:flex;flex-direction:column;gap:.8vw;padding:1vw}
+.proj-court .proj-row{align-items:center}
+.proj-court .proj-qr svg{width:clamp(90px,7vw,140px)}
+.proj-bench{font-size:clamp(16px,1.6vw,26px);color:#c3d3df}
+@media print{.court-draw{-webkit-print-color-adjust:exact;print-color-adjust:exact}}

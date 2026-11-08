@@ -81,6 +81,7 @@ async function scenario(browser, label, ctxOpts) {
   await (await firstRow.$('button[data-action="record"]')).click();
   await proj.waitForFunction(b => document.querySelector('.proj-prog').textContent !== b, projBefore, { timeout: 5000 });
   check(true, 'projection mise à jour automatiquement après une saisie (' + (await proj.textContent('.proj-prog')) + ')');
+  check(await proj.$$eval('.proj-court .court-draw', n => n.length) === 4, 'projection : terrains dessinés');
   if (label === 'ordinateur') await proj.screenshot({ path: path.join(OUT, label + '-projection.png') });
   await proj.close();
   const counter = { n: 0 };
@@ -214,7 +215,8 @@ async function demoClass(browser) {
   check(wg.spread < lvl, 'répartition équilibrée : écart des moyennes ' + wg.spread.toFixed(0) + ' contre ' + lvl.toFixed(0) + ' par niveau');
   await page.selectOption('#wgMode', 'balanced');
   await page.screenshot({ path: path.join(OUT, 'groupes-de-travail.png'), fullPage: true });
-  await page.click('#view .court [data-action="student"] >> nth=0');
+  check(await page.$$eval('.wg-card .court-draw .cd-player', n => n.length) === 23, 'groupes de travail : les 23 présents dessinés sur leur terrain');
+  await page.click('#view .wg-card [data-action="student"] >> nth=0');
   check(!!(await page.$('#studentDialog[open]')), 'fiche accessible depuis les groupes de travail');
   await page.keyboard.press('Escape');
   await page.screenshot({ path: path.join(OUT, 'exemple-classement.png'), fullPage: true });
@@ -222,6 +224,29 @@ async function demoClass(browser) {
   await page.click('[data-action="create-session"]');
   await page.click('[data-action="start-session"]');
   check(await page.$$eval('.match.st-playing', n => n.length) === 6, 'nouvelle séance possible sur la classe exemple (6 terrains occupés)');
+  // Terrains dessinés selon le sport, élèves placés dessus
+  const draw = await page.evaluate(() => ({
+    n: document.querySelectorAll('.court-card .court-draw svg').length,
+    sport: document.querySelector('.court-draw').dataset.sport,
+    players: Array.from(document.querySelectorAll('.court-card')).filter(c => c.querySelectorAll('.cd-player').length === 2).length
+  }));
+  check(draw.n === 6 && draw.sport === 'badminton' && draw.players === 6, 'terrains de badminton dessinés, 2 élèves placés sur chacun des 6 terrains');
+  const benchOk = await page.evaluate(() => {
+    const playing = new Set(Array.from(document.querySelectorAll('.court-card .cd-name')).map(e => e.textContent));
+    return Array.from(document.querySelectorAll('.bench-chip')).every(b => !playing.has(b.textContent));
+  });
+  check(benchOk, 'banc : aucun élève qui joue déjà sur un autre terrain');
+  await page.screenshot({ path: path.join(OUT, 'terrains-badminton.png'), fullPage: false, clip: { x: 0, y: 330, width: 1280, height: 900 } });
+  await page.click('[data-tab="settings"]');
+  await page.selectOption('#sport', 'Tennis de table');
+  await page.click('[data-action="save-settings"]');
+  await page.click('[data-tab="session"]');
+  check(await page.$eval('.court-draw', d => d.dataset.sport) === 'tt', 'changement de sport dans les réglages : terrains redessinés (tennis de table)');
+  await page.screenshot({ path: path.join(OUT, 'terrains-tennis-de-table.png'), fullPage: false, clip: { x: 0, y: 330, width: 1280, height: 900 } });
+  await page.click('[data-tab="settings"]');
+  await page.selectOption('#sport', 'Badminton');
+  await page.click('[data-action="save-settings"]');
+  await page.click('[data-tab="session"]');
   // Terrains modifiés en cours de séance
   await page.click('[data-action="courts-step"][data-delta="1"]');
   check(await page.$$eval('.match.st-playing', n => n.length) === 7 && await noConflict(page), 'ajout d\'un terrain en cours de séance : 7 matchs en cours, sans conflit');
@@ -268,7 +293,7 @@ async function qrFlow(browser) {
   await page.click('[data-tab="session"]');
   await page.click('[data-action="create-session"]');
   await page.click('[data-action="start-session"]');
-  await page.click('.court [data-action="qr-match"] >> nth=0');
+  await page.click('.court-card [data-action="qr-match"] >> nth=0');
   await page.waitForSelector('#qrDialog[open]');
   const href = await page.getAttribute('#qrDialog .qr-link a', 'href');
   check(href && href.startsWith(BASE + '#f='), 'QR du match : lien vers la feuille de match (' + href.length + ' caractères)');

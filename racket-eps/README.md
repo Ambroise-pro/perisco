@@ -38,6 +38,14 @@ tests/       tests du moteur et du générateur QR (node --test), parcours navig
 | Ronde suisse | Appariement exact de coût minimal (revanches évitées quand c'est possible). L'exemption va en priorité à un élève qui n'en a pas eu, avec 1 point de tournoi et 0 Elo. |
 | Reclassement | Brassage en poules, puis divisions en **tableaux intégraux** (2, 4, 8, 16…) ou en poules de 3, 5 ou 6. Chaque place est attribuée une fois. Corriger un match en amont invalide les matchs en aval, après confirmation. |
 
+## Terrains dessinés selon le sport
+Les terrains sont dessinés vus de dessus, aux proportions réglementaires, selon le **sport de la classe** (Réglages) : badminton, tennis de table, pickleball, tennis, padel ; « Autre » donne un terrain neutre. Les élèves y sont **placés physiquement** :
+- **séance** : joueur A à gauche du filet (pastille jaune), joueur B à droite (pastille bleu clair) ; au tennis de table, en bout de table. Les remplaçants du groupe qui ne jouent sur aucun terrain attendent « sur le banc ». Un terrain libre ou fermé (grisé, hachuré) est signalé. Toucher un nom ouvre la fiche de l'élève, et « Saisir le score » fait défiler la page jusqu'au match ;
+- **projection** : les mêmes dessins en grand, avec le QR du match ;
+- **groupes de travail** : tous les élèves du groupe répartis sur les deux moitiés de leur terrain.
+
+Les identités ne reposent pas sur la couleur : chaque élève est nommé. Les cotes affichées dans la maquette de conception viennent des règlements usuels et méritent une vérification avant toute communication officielle.
+
 ## Groupes de travail
 L'onglet **Groupes de travail** répartit les élèves présents sur un nombre de terrains choisi (− / +), sans créer de séance et sans toucher à l'Elo :
 - **Équilibrée** (par défaut) : distribution en serpentin selon le classement Elo (1ᵉʳ → T1, 2ᵉ → T2 … dernier terrain, puis retour). Chaque terrain a un niveau moyen comparable, et l'écart entre les moyennes est affiché.
