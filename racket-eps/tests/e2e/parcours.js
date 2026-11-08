@@ -111,6 +111,10 @@ async function scenario(browser, label, ctxOpts) {
   });
   check(Math.abs(st.total - 12000) < 1e-6 && st.changed, 'Elo recalculé, somme conservée (12 000)');
   check(st.absent === 1000, 'l\'absent conserve son Elo');
+  await page.click('[data-tab="dashboard"]');
+  check(await page.$('.backup-reminder') !== null && await page.getAttribute('.top [data-action="export-json"]', 'data-count') === '1', 'rappel de sauvegarde : 1 séance clôturée non sauvegardée (accueil et pastille)');
+  const [bk] = await Promise.all([page.waitForEvent('download'), page.click('.backup-reminder [data-action="export-json"]')]);
+  check(/\.json$/.test(bk.suggestedFilename()) && await page.$('.backup-reminder') === null, 'sauvegarde téléchargée, le rappel disparaît');
 
   // Séance 2 : ronde suisse, proposition selon l'Elo
   await page.click('[data-tab="session"]');
@@ -275,11 +279,24 @@ async function demoClass(browser) {
   await ctx.close();
 }
 
+// Écrit une vidéo .y4m (caméra simulée de Chromium) où l'on voit le QR du texte, tourné et incliné.
+function writeCameraVideo(file, text) {
+  const { render } = require('../qr-render.js');
+  const W = 640, H = 480;
+  const frames = [];
+  for (let i = 0; i < 6; i++) frames.push(render(text, { W, H, module: 6, angle: 8 + i, tilt: 0.06, noise: 10, seed: i }).data);
+  const head = Buffer.from('YUV4MPEG2 W' + W + ' H' + H + ' F5:1 Ip A1:1 C420jpeg\n');
+  const uv = Buffer.alloc((W / 2) * (H / 2) * 2, 128);
+  const parts = [head];
+  frames.forEach(y => { parts.push(Buffer.from('FRAME\n'), Buffer.from(y), uv); });
+  fs.writeFileSync(file, Buffer.concat(parts));
+}
+
 // Petit serveur statique local : les QR codes exigent une adresse http(s), comme sur Vercel.
 function serve() {
   const http = require('http');
   const root = path.resolve(__dirname, '../..');
-  const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+  const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
   return new Promise(res => {
     const srv = http.createServer((req, resp) => {
       const f = path.join(root, decodeURIComponent(req.url.split('?')[0].split('#')[0]).replace(/^\/+/, '') || 'index.html');
@@ -305,13 +322,24 @@ async function qrFlow(browser) {
   await page.click('[data-tab="session"]');
   await page.click('[data-action="create-session"]');
   await page.click('[data-action="start-session"]');
+  // En poules classiques, le QR d'un terrain ouvre la feuille de SA poule (tous les matchs), pas un seul match.
   await page.click('.court-card [data-action="qr-match"] >> nth=0');
   await page.waitForSelector('#qrDialog[open]');
-  const href = await page.getAttribute('#qrDialog .qr-link a', 'href');
-  check(href && href.startsWith(BASE + '#f='), 'QR du match : lien vers la feuille de match (' + href.length + ' caractères)');
-  check(await page.$('#qrDialog .qr-img svg') !== null, 'QR code de la feuille de match dessiné (générateur qr.js)');
-  if (process.env.QR_SHOTS) await page.locator('#qrDialog .qr-img').screenshot({ path: path.join(OUT, 'qr-feuille.png') });
+  const courtHref = await page.getAttribute('#qrDialog .qr-link a', 'href');
+  check(courtHref && courtHref.startsWith(BASE + '#p=') && /Poule/.test(await page.textContent('#qrTitle')), 'poules : le QR du terrain mène à la feuille de la poule (tous les matchs)');
+  check(await page.$('#qrDialog .qr-img svg') !== null, 'QR code dessiné (générateur qr.js)');
   await page.click('[data-action="qr-close"]');
+  await page.click('.match.st-playing [data-action="score-sheet"] >> nth=0');
+  await page.click('#scoreDialog .ss-more summary');
+  check(/QR de la poule/.test(await page.textContent('#scoreDialog .ss-more')), 'poules : le panneau de saisie propose le QR de la poule');
+  await page.click('#scoreDialog [data-action="ss-close"]');
+  // Feuille d'un seul match (utilisée par les autres formats) : lien construit comme dans l'application
+  const href = await page.evaluate(base => {
+    const R = window.RacketEngine, db = window.__racket.getDB(), c = db.classes[0], s = c.sessions.find(x => x.status !== 'closed');
+    const m = s.matches.find(x => x.court && !x.done);
+    return base + '#f=' + R.encodeSheet(R.sheetData(c, s, m));
+  }, BASE);
+  check(href.startsWith(BASE + '#f='), 'feuille d\'un seul match : lien (' + href.length + ' caractères)');
 
   // Tablette élève
   const tab = await browser.newContext(devices['iPad (gen 7)']);
@@ -393,6 +421,26 @@ async function qrFlow(browser) {
   const poolCode = (await pt.textContent('.sheet-code')).trim();
   check(/^RP1\./.test(poolCode) && await pt.$('.sheet .qr-img svg') !== null, 'tablette : un QR et un code pour toute la poule (' + poolCode.length + ' caractères)');
   await pt.screenshot({ path: path.join(OUT, 'poule-resultat.png'), fullPage: true });
+  // Caméra simulée : on filme le QR de résultat de la poule ; le lecteur maison le lit tout seul.
+  const video = path.join(OUT, 'camera-poule.y4m');
+  writeCameraVideo(video, poolCode);
+  const camBrowser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--use-file-for-fake-video-capture=' + video] });
+  const camCtx = await camBrowser.newContext({ storageState: await ctx.storageState(), permissions: ['camera'], viewport: { width: 1280, height: 900 } });
+  const cam = await camCtx.newPage();
+  cam.on('pageerror', e => errors.push('caméra : ' + e.message));
+  cam.on('dialog', d => d.accept());
+  await cam.goto(BASE);
+  await cam.click('[data-tab="session"]');
+  await cam.click('[data-action="scan-open"]');
+  await cam.waitForFunction(() => /Poule 1/.test((document.querySelector('.scan-status') || {}).textContent || ''), null, { timeout: 20000 });
+  const camOk = await cam.evaluate(() => {
+    const c = window.__racket.getDB().classes[0], s = c.sessions.find(x => x.status !== 'closed');
+    return window.RacketEngine.groupMatches(s, 0).every(m => m.done);
+  });
+  check(camOk, 'caméra simulée : le QR filmé est lu par le lecteur de l\'application et la poule est enregistrée');
+  await cam.screenshot({ path: path.join(OUT, 'scan-camera.png') });
+  await camBrowser.close();
+
   await page.click('[data-action="scan-open"]');
   await page.waitForSelector('.scan-panel');
   await page.fill('#scanCode', poolCode);
@@ -409,6 +457,38 @@ async function qrFlow(browser) {
   check(/déjà enregistrée/.test(await page.textContent('.scan-status')), 'second scan de la poule : rien ne change');
   await page.click('[data-action="scan-close"]');
   check(await page.$('.scan-panel') === null, 'mode scan fermé (caméra arrêtée)');
+  // Test de l'appareil
+  await page.click('[data-tab="settings"]');
+  await page.click('#view [data-tab="diagnostic"]');
+  await page.waitForFunction(() => /Prête|Copie locale/.test((document.getElementById('dg-offline') || {}).textContent || ''), null, { timeout: 15000 });
+  const diag = await page.innerText('#view');
+  check(/Enregistrement local opérationnel/.test(diag) && /Lecteur de l'application/.test(diag) && /Protocole d'essai/.test(diag), 'test de l\'appareil : stockage, hors connexion, lecteur QR et protocole d\'essai affichés');
+  if (process.env.QR_SHOTS || true) await page.screenshot({ path: path.join(OUT, 'test-appareil.png'), fullPage: true });
+
+  // Export d'une classe puis import par fusion (classe déjà présente → remplacer)
+  await page.click('[data-tab="settings"]');
+  const [ex] = await Promise.all([page.waitForEvent('download'), page.click('[data-action="export-class"]')]);
+  const exPath = await ex.path();
+  const nBefore = await page.evaluate(() => window.__racket.getDB().classes.length);
+  await page.setInputFiles('#importFile', exPath);
+  await page.waitForFunction(() => /Import/.test(document.getElementById('toast').textContent));
+  check(await page.evaluate(() => window.__racket.getDB().classes.length) === nBefore && /remplacée/.test(await page.textContent('#toast')), 'import par fusion : la classe existante est remplacée, aucune autre n\'est touchée');
+
+  // Hors connexion : l'application et la feuille de poule s'ouvrent sans réseau
+  const off = await browser.newContext({ viewport: { width: 1180, height: 820 }, serviceWorkers: 'allow' });
+  const op = await off.newPage();
+  await op.goto(BASE);
+  await op.evaluate(() => navigator.serviceWorker.ready.then(() => true));
+  await op.reload();
+  await op.waitForFunction(() => !!navigator.serviceWorker.controller);
+  await off.setOffline(true);
+  await op.reload();
+  check(/Racket/.test(await op.innerText('body')) && await op.$('#nav .tab-btn') !== null, 'hors connexion : l\'application se rouvre sans réseau');
+  await op.goto(poolHref);
+  await op.waitForSelector('.pool-match');
+  check(await op.$$eval('.pool-match', n => n.length) === 6, 'hors connexion : la feuille de poule s\'ouvre sur la tablette sans réseau');
+  await off.close();
+
   check(errors.length === 0, 'aucune erreur JavaScript' + (errors.length ? ' : ' + errors.join(' | ') : ''));
   await tab.close(); await ctx.close(); srv.close();
 }

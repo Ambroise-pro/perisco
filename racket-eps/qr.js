@@ -246,5 +246,7 @@
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + tot + ' ' + tot + '" width="' + px + '" height="' + px + '" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="' + d + '" fill="#000"/></svg>';
   }
 
-  return { encode, toSVG, MAX_VERSION, _rsRemainder: rsRemainder };
+  // Tables partagées avec le lecteur (qrdecode.js), qui lit les QR produits par ce générateur.
+  const internals = { EC_M, ALIGN, EXP, LOG, gmul, MASKS, buildMatrix, dataCodewords };
+  return { encode, toSVG, MAX_VERSION, _rsRemainder: rsRemainder, _internals: internals };
 });

@@ -331,3 +331,12 @@ input,select,textarea{min-height:52px;font-size:17px;border-radius:12px}
 .seg-btn{line-height:1.2}
 .courts-stepper .btn.mini{min-width:56px;min-height:56px;font-size:22px}
 .toast{bottom:104px}
+/* Sauvegardes et test de l'appareil */
+.top [data-action="export-json"]{position:relative}
+.top [data-action="export-json"][data-count]:not([data-count=""])::after{content:attr(data-count);position:absolute;top:-6px;right:-6px;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#ffc2ca;color:#3a0d16;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.backup-reminder{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.diag-row{display:flex;gap:16px;align-items:center;padding:12px 0;border-bottom:1px solid #22394f;flex-wrap:wrap}
+.diag-label{flex:0 0 260px;font-weight:700}
+.diag-val{flex:1 1 300px}
+.protocol{display:grid;gap:10px;padding-left:24px;font-size:17px;line-height:1.45}
+@media(max-width:640px){.diag-label{flex-basis:100%}}
