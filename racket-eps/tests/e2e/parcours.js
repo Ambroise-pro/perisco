@@ -21,7 +21,8 @@ async function noConflict(page) {
     if (!s) return true;
     const act = s.matches.filter(m => m.court && !m.done);
     const pl = act.flatMap(m => [m.a, m.b]), ct = act.map(m => m.court);
-    return new Set(pl).size === pl.length && new Set(ct).size === ct.length && ct.every(t => t <= c.courts);
+    const avail = window.RacketEngine.availableCourts(c, s);
+    return new Set(pl).size === pl.length && new Set(ct).size === ct.length && ct.every(t => avail.includes(t));
   });
 }
 
@@ -30,11 +31,15 @@ async function playAll(page, counter) {
     if (!(await noConflict(page))) throw new Error('ÉCHEC : conflit de terrain ou d\'élève');
     const row = await page.$('.match.st-playing');
     if (!row) return;
-    const inputs = await row.$$('input');
+    // Saisie au toucher : « X gagne : 11 » puis le score du perdant avec « + », puis Valider
     const i = counter.n++;
-    await inputs[0].fill(String(i % 2 ? 11 : i % 9));
-    await inputs[1].fill(String(i % 2 ? i % 9 : 11));
-    await (await row.$('button[data-action="record"]')).click();
+    await (await row.$('[data-action="score-sheet"]')).click();
+    await page.waitForSelector('#scoreDialog[open] .ss-player');
+    const win = i % 2 ? 'sa' : 'sb', lose = i % 2 ? 'sb' : 'sa';
+    await page.click('#scoreDialog [data-action="ss-target"][data-side="' + win + '"]');
+    for (let k = 0; k < i % 9; k++) await page.click('#scoreDialog [data-action="ss-step"][data-side="' + lose + '"][data-delta="1"]');
+    await page.click('#scoreDialog [data-action="ss-validate"]');
+    await page.waitForFunction(() => !document.querySelector('#scoreDialog').open);
   }
 }
 
@@ -53,9 +58,9 @@ async function scenario(browser, label, ctxOpts) {
 
   // Séance 1 : poules
   await page.click('[data-tab="session"]');
-  await page.selectOption('#smode', 'pools');
+  await page.click('[data-action="draft"][data-key="mode"][data-value="pools"]');
   await page.click('[data-action="create-session"]');
-  await page.check('input[data-action="absent"] >> nth=11');
+  await page.click('[data-action="toggle-absent"] >> nth=11');
   const present = await page.evaluate(() => window.__racket.getDB().classes[0].sessions[0].positions.length);
   check(present === 11, 'appel : 1 absent, 11 présents');
   const groups = await page.evaluate(() => window.__racket.getDB().classes[0].sessions[0].groups.map(g => g.length));
@@ -74,12 +79,19 @@ async function scenario(browser, label, ctxOpts) {
   check(await proj.$$eval('.proj-court', n => n.length) === 4, 'projection : 4 terrains affichés');
   check(!/Elo/i.test(await proj.innerText('body')), 'projection : aucune donnée Elo affichée');
   const projBefore = await proj.textContent('.proj-prog');
-  const firstRow = await page.$('.match.st-playing');
-  const ins = await firstRow.$$('input');
-  await ins[0].fill('11'); await ins[1].fill('4');
-  await (await firstRow.$('button[data-action="record"]')).click();
+  // Toucher le terrain 1 ouvre la saisie du score (sans clavier)
+  await page.click('.court-card .cd-hit >> nth=0');
+  await page.waitForSelector('#scoreDialog[open] .ss-player');
+  check(await page.$('#scoreDialog .ss-tie') !== null, 'saisie : validation bloquée tant que le score est à égalité');
+  await page.click('#scoreDialog [data-action="ss-target"][data-side="sa"]');
+  for (let k = 0; k < 4; k++) await page.click('#scoreDialog [data-action="ss-step"][data-side="sb"][data-delta="1"]');
+  check((await page.textContent('#scoreDialog .ss-validate')).includes('11 – 4'), 'saisie au toucher : 11 – 4 sans clavier');
+  if (label === 'ordinateur') await page.screenshot({ path: path.join(OUT, 'saisie-score.png') });
+  await page.click('#scoreDialog [data-action="ss-validate"]');
+  await page.waitForFunction(() => !document.querySelector('#scoreDialog').open);
   await proj.waitForFunction(b => document.querySelector('.proj-prog').textContent !== b, projBefore, { timeout: 5000 });
   check(true, 'projection mise à jour automatiquement après une saisie (' + (await proj.textContent('.proj-prog')) + ')');
+  check(await proj.$$eval('.proj-court .court-draw', n => n.length) === 4, 'projection : terrains dessinés');
   if (label === 'ordinateur') await proj.screenshot({ path: path.join(OUT, label + '-projection.png') });
   await proj.close();
   const counter = { n: 0 };
@@ -102,8 +114,10 @@ async function scenario(browser, label, ctxOpts) {
 
   // Séance 2 : ronde suisse, proposition selon l'Elo
   await page.click('[data-tab="session"]');
-  await page.selectOption('#smode', 'swiss');
-  await page.fill('#rounds', '2');
+  await page.click('[data-action="draft"][data-key="mode"][data-value="swiss"]');
+  await page.click('[data-action="draft-step"][data-key="rounds"][data-delta="-1"]');
+  await page.click('[data-action="draft-step"][data-key="rounds"][data-delta="-1"]');
+  check(await page.textContent('.row-step b') === '2', 'nouvelle séance réglée sans clavier (ronde suisse, 2 rondes)');
   await page.click('[data-action="create-session"]');
   const ordered = await page.evaluate(() => {
     const c = window.__racket.getDB().classes[0], R = window.RacketEngine;
@@ -133,7 +147,9 @@ async function scenario(browser, label, ctxOpts) {
   // Fiche élève
   await page.click('[data-tab="ranking"]');
   await page.screenshot({ path: path.join(OUT, label + '-4-classement.png'), fullPage: true });
-  check(/Évolution par séance/.test(await page.textContent('#view')), 'fiche élève avec évolution par séance');
+  await page.click('#view [data-action="student"] >> nth=0');
+  await page.waitForSelector('#studentDialog[open]');
+  check(/Évolution par séance/.test(await page.textContent('#studentDialog')), 'fiche élève ouverte dans une fenêtre (pop-up)');
   check(await page.$$eval('#eloChart circle', n => n.length) === 2 && await page.$$eval('#rankChart circle', n => n.length) === 2, 'graphiques Elo et rang : un point par séance clôturée');
   await page.hover('#eloChart svg', { position: { x: 30, y: 60 } });
   await page.waitForSelector('#eloChart .tip:not([hidden])');
@@ -141,7 +157,9 @@ async function scenario(browser, label, ctxOpts) {
   await page.focus('#rankChart');
   await page.keyboard.press('ArrowLeft');
   check(/Séance 1/.test(await page.textContent('#rankChart .tip')), 'graphique utilisable au clavier (flèches)');
-  await page.screenshot({ path: path.join(OUT, label + '-5-graphiques.png'), fullPage: true });
+  await page.screenshot({ path: path.join(OUT, label + '-5-graphiques.png'), fullPage: false });
+  await page.keyboard.press('Escape');
+  check(!(await page.$('#studentDialog[open]')), 'fiche fermée avec Échap');
 
   for (const t of ['dashboard', 'students', 'session', 'ranking', 'history', 'settings']) {
     await page.click(`[data-tab="${t}"]`);
@@ -191,23 +209,219 @@ async function demoClass(browser) {
   const info = await page.evaluate(() => { const c = window.__racket.getDB().classes[0]; return { n: c.students.length, s: c.sessions.length, demo: c.demo, closed: c.sessions.every(x => x.status === 'closed') }; });
   check(info.demo && info.n === 24 && info.s === 4 && info.closed, 'classe exemple : 24 élèves fictifs, 4 séances simulées clôturées');
   check(/données fictives/.test(await page.innerText('#view')), 'classe signalée comme fictive');
-  check(await page.$$eval('#eloChart circle', n => n.length) === 4, 'graphiques alimentés par les séances simulées');
+  await page.click('#view [data-action="student"] >> nth=0');
+  await page.waitForSelector('#studentDialog[open]');
+  check(await page.$$eval('#studentDialog #eloChart circle', n => n.length) === 4, 'fiche en pop-up : graphiques alimentés par les séances simulées');
+  await page.click('[data-action="student-close"]');
+
+  // Groupes de travail
+  await page.click('[data-tab="groups"]');
+  await page.click('[data-action="wg-courts"][data-delta="-1"]');
+  await page.click('[data-action="wg-courts"][data-delta="-1"]');
+  await page.click('#view details summary');
+  await page.check('input[data-action="wg-absent"] >> nth=0');
+  const wg = await page.evaluate(() => { const c = window.__racket.getDB().classes[0]; return { courts: c.workGroups.courts, sizes: c.workGroups.groups.map(g => g.length), spread: window.RacketEngine.workGroupStats(c).spread }; });
+  check(wg.courts === 4 && wg.sizes.reduce((a, b) => a + b, 0) === 23 && Math.max(...wg.sizes) - Math.min(...wg.sizes) <= 1, 'groupes de travail : 23 présents sur 4 terrains (' + wg.sizes.join('+') + ')');
+  await page.selectOption('#wgMode', 'level');
+  const lvl = await page.evaluate(() => window.RacketEngine.workGroupStats(window.__racket.getDB().classes[0]).spread);
+  check(wg.spread < lvl, 'répartition équilibrée : écart des moyennes ' + wg.spread.toFixed(0) + ' contre ' + lvl.toFixed(0) + ' par niveau');
+  await page.selectOption('#wgMode', 'balanced');
+  await page.screenshot({ path: path.join(OUT, 'groupes-de-travail.png'), fullPage: true });
+  check(await page.$$eval('.wg-card .court-draw .cd-player', n => n.length) === 23, 'groupes de travail : les 23 présents dessinés sur leur terrain');
+  await page.click('#view .wg-card [data-action="student"] >> nth=0');
+  check(!!(await page.$('#studentDialog[open]')), 'fiche accessible depuis les groupes de travail');
+  await page.keyboard.press('Escape');
   await page.screenshot({ path: path.join(OUT, 'exemple-classement.png'), fullPage: true });
   await page.click('[data-tab="session"]');
   await page.click('[data-action="create-session"]');
   await page.click('[data-action="start-session"]');
   check(await page.$$eval('.match.st-playing', n => n.length) === 6, 'nouvelle séance possible sur la classe exemple (6 terrains occupés)');
+  // Terrains dessinés selon le sport, élèves placés dessus
+  const draw = await page.evaluate(() => ({
+    n: document.querySelectorAll('.court-card .court-draw svg').length,
+    sport: document.querySelector('.court-draw').dataset.sport,
+    players: Array.from(document.querySelectorAll('.court-card')).filter(c => c.querySelectorAll('.cd-player').length === 2).length
+  }));
+  check(draw.n === 6 && draw.sport === 'badminton' && draw.players === 6, 'terrains de badminton dessinés, 2 élèves placés sur chacun des 6 terrains');
+  const benchOk = await page.evaluate(() => {
+    const playing = new Set(Array.from(document.querySelectorAll('.court-card .cd-name')).map(e => e.textContent));
+    return Array.from(document.querySelectorAll('.bench-chip')).every(b => !playing.has(b.textContent));
+  });
+  check(benchOk, 'banc : aucun élève qui joue déjà sur un autre terrain');
+  await page.screenshot({ path: path.join(OUT, 'terrains-badminton.png'), fullPage: false, clip: { x: 0, y: 330, width: 1280, height: 900 } });
+  await page.click('[data-tab="settings"]');
+  await page.selectOption('#sport', 'Tennis de table');
+  await page.click('[data-action="save-settings"]');
+  await page.click('[data-tab="session"]');
+  check(await page.$eval('.court-draw', d => d.dataset.sport) === 'tt', 'changement de sport dans les réglages : terrains redessinés (tennis de table)');
+  await page.screenshot({ path: path.join(OUT, 'terrains-tennis-de-table.png'), fullPage: false, clip: { x: 0, y: 330, width: 1280, height: 900 } });
+  await page.click('[data-tab="settings"]');
+  await page.selectOption('#sport', 'Badminton');
+  await page.click('[data-action="save-settings"]');
+  await page.click('[data-tab="session"]');
+  // Terrains modifiés en cours de séance
+  await page.click('[data-action="courts-step"][data-delta="1"]');
+  check(await page.$$eval('.match.st-playing', n => n.length) === 7 && await noConflict(page), 'ajout d\'un terrain en cours de séance : 7 matchs en cours, sans conflit');
+  await page.click('[data-action="court-toggle"][data-court="2"]');
+  const on2 = await page.evaluate(() => { const c = window.__racket.getDB().classes[0]; const s = c.sessions.find(x => x.status !== 'closed'); return s.matches.some(m => m.court === 2 && !m.done); });
+  check(!on2 && await noConflict(page) && /Fermé/.test(await page.innerText('#view')), 'terrain 2 fermé (match en cours renvoyé en file après confirmation)');
+  await page.click('[data-action="courts-step"][data-delta="-1"]');
+  const state = await page.evaluate(() => { const c = window.__racket.getDB().classes[0]; const s = c.sessions.find(x => x.status !== 'closed'); return { total: s.courts, cls: c.courts, active: s.matches.filter(m => m.court && !m.done).length }; });
+  check(state.total === 6 && state.cls === 6 && state.active === 5 && await noConflict(page), 'retrait d\'un terrain : 6 terrains dont 1 fermé, 5 matchs en cours ; réglage de la classe inchangé');
+  await page.click('[data-action="court-toggle"][data-court="2"]');
+  check(await page.$$eval('.match.st-playing', n => n.length) === 6, 'terrain 2 rouvert : 6 matchs en cours');
+  await page.screenshot({ path: path.join(OUT, 'exemple-terrains.png'), fullPage: false });
   check(errors.length === 0, 'aucune erreur JavaScript');
   await ctx.close();
 }
 
+// Petit serveur statique local : les QR codes exigent une adresse http(s), comme sur Vercel.
+function serve() {
+  const http = require('http');
+  const root = path.resolve(__dirname, '../..');
+  const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+  return new Promise(res => {
+    const srv = http.createServer((req, resp) => {
+      const f = path.join(root, decodeURIComponent(req.url.split('?')[0].split('#')[0]).replace(/^\/+/, '') || 'index.html');
+      if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { resp.writeHead(404); resp.end(); return; }
+      resp.writeHead(200, { 'Content-Type': types[path.extname(f)] || 'application/octet-stream' });
+      fs.createReadStream(f).pipe(resp);
+    }).listen(0, '127.0.0.1', () => res(srv));
+  });
+}
+
+async function qrFlow(browser) {
+  console.log('\n— QR codes : feuille de match sur tablette et mode scan');
+  const srv = await serve();
+  const BASE = 'http://127.0.0.1:' + srv.address().port + '/index.html';
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ['camera'] });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  const answers = ['8', '0'];
+  page.on('dialog', d => d.type() === 'prompt' ? d.accept(answers.shift()) : d.accept());
+  await page.goto(BASE);
+  await page.click('.top [data-action="demo-class"]');
+  await page.click('[data-tab="session"]');
+  await page.click('[data-action="create-session"]');
+  await page.click('[data-action="start-session"]');
+  await page.click('.court-card [data-action="qr-match"] >> nth=0');
+  await page.waitForSelector('#qrDialog[open]');
+  const href = await page.getAttribute('#qrDialog .qr-link a', 'href');
+  check(href && href.startsWith(BASE + '#f='), 'QR du match : lien vers la feuille de match (' + href.length + ' caractères)');
+  check(await page.$('#qrDialog .qr-img svg') !== null, 'QR code de la feuille de match dessiné (générateur qr.js)');
+  if (process.env.QR_SHOTS) await page.locator('#qrDialog .qr-img').screenshot({ path: path.join(OUT, 'qr-feuille.png') });
+  await page.click('[data-action="qr-close"]');
+
+  // Tablette élève
+  const tab = await browser.newContext(devices['iPad (gen 7)']);
+  const t = await tab.newPage();
+  t.on('pageerror', e => errors.push('tablette : ' + e.message));
+  t.on('dialog', d => d.accept());
+  await t.goto(href);
+  await t.waitForSelector('.sheet-player');
+  const names = await t.$$eval('.sheet-name', n => n.map(x => x.textContent));
+  for (let i = 0; i < 11; i++) await t.click('[data-action="sheet-step"][data-side="a"][data-delta="1"]');
+  for (let i = 0; i < 5; i++) await t.click('[data-action="sheet-step"][data-side="b"][data-delta="1"]');
+  await t.click('[data-action="sheet-step"][data-side="b"][data-delta="-1"]');
+  await t.reload();
+  check(await t.$$eval('.sheet-score output', o => o.map(x => x.textContent).join('-')) === '11-4', 'feuille de match : score 11-4 compté, conservé après rechargement');
+  await t.click('[data-action="sheet-finish"]');
+  const code = (await t.textContent('.sheet-code')).trim();
+  check(/^RE1\./.test(code), 'tablette : code de résultat affiché (' + code + ')');
+  await t.screenshot({ path: path.join(OUT, 'qr-tablette-resultat.png') });
+  check(await t.$('.sheet .qr-img svg') !== null, 'tablette : QR de résultat dessiné');
+  if (process.env.QR_SHOTS) {
+    await t.locator('.sheet .qr-img').screenshot({ path: path.join(OUT, 'qr-resultat.png') });
+    fs.writeFileSync(path.join(OUT, 'qr-attendus.json'), JSON.stringify({ feuille: href, resultat: code }));
+  }
+  check(await t.evaluate(() => !localStorage.getItem('racket_eps_v1')), 'la tablette n\'enregistre aucune donnée de la classe');
+
+  // Mode scan sur l'appareil de l'enseignant (caméra factice)
+  await page.click('[data-action="scan-open"]');
+  await page.waitForSelector('.scan-panel');
+  await page.waitForFunction(() => /Présentez|non disponible|refusée|inaccessible/.test(document.querySelector('.scan-status').textContent));
+  const status = await page.textContent('.scan-status');
+  check(true, 'mode scan ouvert : « ' + status.trim() + ' »');
+  const hasVideo = await page.evaluate(() => { const v = document.querySelector('.scan-panel video'); return !v.hidden && !!v.srcObject; });
+  console.log('    (aperçu caméra ' + (hasVideo ? 'actif' : 'masqué : pas de lecteur QR dans ce navigateur') + ')');
+  await page.screenshot({ path: path.join(OUT, 'qr-mode-scan.png') });
+  await page.fill('#scanCode', code.replace('.11.4.', '.11.5.'));
+  await page.press('#scanCode', 'Enter');
+  check(/contrôle/.test(await page.textContent('.scan-status')), 'code modifié refusé (contrôle)');
+  await page.fill('#scanCode', code);
+  await page.press('#scanCode', 'Enter');
+  await page.waitForFunction(() => /Enregistré/.test(document.querySelector('.scan-status').textContent));
+  const rec = await page.evaluate(n => {
+    const c = window.__racket.getDB().classes[0], s = c.sessions.find(x => x.status !== 'closed');
+    const id = x => c.students.find(p => p.name === x).id;
+    const m = s.matches.find(x => x.a === id(n[0]) && x.b === id(n[1]));
+    return m && m.done && m.sa === 11 && m.sb === 4;
+  }, names);
+  check(rec, 'résultat 11-4 enregistré dans la séance par le scan');
+  await page.fill('#scanCode', code);
+  await page.press('#scanCode', 'Enter');
+  check(/Déjà enregistré/.test(await page.textContent('.scan-status')), 'second scan du même code : rien n\'est modifié');
+  // Poules en autonomie : QR de poule → tous les matchs sur la tablette → un seul code
+  await page.click('[data-action="scan-close"]');
+  await page.click('[data-action="qr-pool"][data-group="0"]');
+  await page.waitForSelector('#qrDialog[open]');
+  const poolHref = await page.getAttribute('#qrDialog .qr-link a', 'href');
+  check(poolHref.includes('#p=') && await page.$('#qrDialog .qr-img svg') !== null, 'QR de la poule 1 dessiné (lien vers la feuille de poule)');
+  await page.click('[data-action="qr-close"]');
+  const pt = await tab.newPage();
+  pt.on('pageerror', e => errors.push('tablette poule : ' + e.message));
+  pt.on('dialog', d => d.accept());
+  await pt.goto(poolHref);
+  await pt.waitForSelector('.pool-match');
+  const nPool = await pt.$$eval('.pool-match', n => n.length);
+  check(nPool === 6, 'tablette : les 6 matchs de la poule affichés');
+  for (let i = 0; i < nPool; i++) {
+    if (i === 2) {
+      await pt.click('.pool-grid > .pool-match >> nth=2 >> summary');
+      await pt.click(`[data-action="pool-forfeit"][data-i="${i}"][data-side="b"]`);
+      continue;
+    }
+    for (let k = 0; k < 11; k++) await pt.click(`[data-action="pool-step"][data-i="${i}"][data-side="${i % 2 ? 'b' : 'a'}"][data-delta="1"]`);
+    for (let k = 0; k < i + 1; k++) await pt.click(`[data-action="pool-step"][data-i="${i}"][data-side="${i % 2 ? 'a' : 'b'}"][data-delta="1"]`);
+    await pt.click(`[data-action="pool-validate"][data-i="${i}"]`);
+    if (i === 1) { await pt.reload(); await pt.waitForSelector('.pool-match'); }
+  }
+  check(await pt.$$eval('.pool-match.done', n => n.length) === 6, 'tablette : 6 matchs validés (dont un forfait), conservés après rechargement');
+  await pt.screenshot({ path: path.join(OUT, 'poule-tablette.png'), fullPage: true });
+  await pt.click('[data-action="pool-finish"]');
+  const poolCode = (await pt.textContent('.sheet-code')).trim();
+  check(/^RP1\./.test(poolCode) && await pt.$('.sheet .qr-img svg') !== null, 'tablette : un QR et un code pour toute la poule (' + poolCode.length + ' caractères)');
+  await pt.screenshot({ path: path.join(OUT, 'poule-resultat.png'), fullPage: true });
+  await page.click('[data-action="scan-open"]');
+  await page.waitForSelector('.scan-panel');
+  await page.fill('#scanCode', poolCode);
+  await page.press('#scanCode', 'Enter');
+  await page.waitForFunction(() => /Poule 1/.test(document.querySelector('.scan-status').textContent));
+  const poolDone = await page.evaluate(() => {
+    const c = window.__racket.getDB().classes[0], s = c.sessions.find(x => x.status !== 'closed');
+    const ms = window.RacketEngine.groupMatches(s, 0);
+    return { all: ms.every(m => m.done), forfeit: !!ms[2].forfeit, n: ms.length };
+  });
+  check(poolDone.all && poolDone.forfeit && poolDone.n === 6, 'scan du code de poule : les 6 résultats enregistrés d\'un coup');
+  await page.fill('#scanCode', poolCode);
+  await page.press('#scanCode', 'Enter');
+  check(/déjà enregistrée/.test(await page.textContent('.scan-status')), 'second scan de la poule : rien ne change');
+  await page.click('[data-action="scan-close"]');
+  check(await page.$('.scan-panel') === null, 'mode scan fermé (caméra arrêtée)');
+  check(errors.length === 0, 'aucune erreur JavaScript' + (errors.length ? ' : ' + errors.join(' | ') : ''));
+  await tab.close(); await ctx.close(); srv.close();
+}
+
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
   try {
     await scenario(browser, 'ordinateur', { viewport: { width: 1280, height: 900 } });
     await scenario(browser, 'telephone', devices['iPhone 13']);
+    await scenario(browser, 'tablette', devices['iPad (gen 7) landscape']);
     await migration(browser);
     await demoClass(browser);
+    await qrFlow(browser);
     console.log('\nParcours réussis. Captures : ' + OUT);
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exit(1); });

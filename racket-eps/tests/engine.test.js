@@ -19,7 +19,8 @@ function checkCourts(c, s) {
   const active = s.matches.filter(m => m.court && !m.done);
   const courts = active.map(m => m.court);
   assert.equal(new Set(courts).size, courts.length, 'terrain utilisé deux fois');
-  assert.ok(courts.every(t => t >= 1 && t <= c.courts), 'terrain hors limite');
+  const avail = R.availableCourts(c, s);
+  assert.ok(courts.every(t => avail.includes(t)), 'terrain retiré ou fermé encore utilisé');
   const players = active.flatMap(m => [m.a, m.b]);
   assert.equal(new Set(players).size, players.length, 'élève sur deux terrains');
 }
@@ -426,4 +427,204 @@ test('Classe exemple : élèves fictifs, séances simulées valides, reproductib
   const empty = R.createDemoClass({ students: 5, sessions: 0 });
   assert.equal(empty.sessions.length, 0);
   assert.equal(empty.students.length, 5);
+});
+
+test('Terrains modifiables en cours de séance : ajout, retrait avec confirmation, fermeture d\'un terrain précis', () => {
+  const c = makeClass(16, 4);
+  const s = newSession(c, { mode: 'pools', groupSize: 4 });
+  R.startSession(c, s);
+  assert.equal(s.matches.filter(m => m.court).length, 4);
+  // Ajout : les nouveaux terrains sont occupés immédiatement si des matchs attendent
+  assert.ok(R.setSessionCourts(c, s, 6).ok);
+  checkCourts(c, s);
+  assert.equal(s.matches.filter(m => m.court && !m.done).length, 6);
+  assert.equal(c.courts, 4, 'le réglage de la classe n\'est pas modifié');
+  // Retrait : confirmation exigée car des matchs sont en cours sur les terrains 4 à 6
+  const r = R.setSessionCourts(c, s, 3);
+  assert.ok(!r.ok && r.needsConfirm && r.displaced.length === 3);
+  assert.equal(s.courts, 6, 'rien ne change sans confirmation');
+  const displaced = r.displaced;
+  assert.ok(R.setSessionCourts(c, s, 3, { confirm: true }).ok);
+  checkCourts(c, s);
+  assert.equal(s.matches.filter(m => m.court && !m.done).length, 3);
+  displaced.forEach(id => { const m = s.matches.find(x => x.id === id); assert.ok(!m.done && !m.court, 'match renvoyé en file d\'attente'); });
+  // Fermer le terrain 2 (pas forcément le dernier)
+  const on2 = s.matches.find(m => m.court === 2 && !m.done);
+  assert.ok(R.setCourtClosed(c, s, 2, true).needsConfirm);
+  assert.ok(R.setCourtClosed(c, s, 2, true, { confirm: true }).ok);
+  checkCourts(c, s);
+  assert.ok(!s.matches.some(m => m.court === 2 && !m.done));
+  assert.ok(!on2.court);
+  assert.deepEqual(R.availableCourts(c, s), [1, 3]);
+  // On ne peut pas tout fermer
+  R.setCourtClosed(c, s, 1, true, { confirm: true });
+  assert.equal(R.setCourtClosed(c, s, 3, true, { confirm: true }).ok, false);
+  // Rouvrir
+  assert.ok(R.setCourtClosed(c, s, 2, false).ok);
+  assert.ok(R.setCourtClosed(c, s, 1, false).ok);
+  assert.equal(s.matches.filter(m => m.court && !m.done).length, 3);
+  // Terrain libre (sans match) : pas de confirmation
+  playSession(c, s, rng(3));
+  assert.ok(s.matches.every(m => m.done));
+});
+
+test('Changements de terrains aléatoires pendant toute une séance : jamais de conflit, tout se termine', () => {
+  for (const f of FORMATS) {
+    const c = makeClass(13, 3);
+    const s = newSession(c, f);
+    R.startSession(c, s);
+    const r = rng(77);
+    for (let guard = 0; guard < 3000; guard++) {
+      checkCourts(c, s);
+      if (r() < 0.15) {
+        const op = r() < 0.6 ? R.setSessionCourts(c, s, 1 + Math.floor(r() * 6), { confirm: true }) : R.setCourtClosed(c, s, 1 + Math.floor(r() * R.totalCourts(c, s)), r() < 0.5, { confirm: true });
+        if (!op.ok) assert.match(op.error, /au moins un terrain/);
+        continue;
+      }
+      const active = s.matches.filter(m => m.court && !m.done);
+      if (active.length) {
+        const m = active[Math.floor(r() * active.length)];
+        assert.ok(R.recordResult(c, s, m.id, r() < 0.5 ? { sa: 11, sb: 3 } : { sa: 3, sb: 11 }).ok);
+        continue;
+      }
+      if (s.matches.some(m => !m.done && m.a && m.b)) { assert.ok(R.availableCourts(c, s).length > 0); continue; }
+      if (R.canNextRound(s).ok) { R.nextRound(c, s); continue; }
+      if (s.mode === 'reclass' && R.canBuildClassement(s).ok) { R.buildClassement(c, s, R.proposePartitions(s.positions.length)[0].sizes); continue; }
+      if (s.mode === 'challenge' && s.matches.length < 10) {
+        const o = R.challengeOrder(s);
+        const i = 1 + Math.floor(r() * (o.length - 1));
+        R.addChallenge(c, s, o[i], o[i - 1]);
+        continue;
+      }
+      break;
+    }
+    assert.ok(s.matches.every(m => m.done), f.mode + ' : séance non terminée');
+    assert.ok(R.closeSession(c, s).ok);
+  }
+});
+
+test('QR : feuille de match encodée/décodée, code de résultat vérifié puis enregistré', () => {
+  const c = makeClass(8, 2);
+  const s = newSession(c, { mode: 'pools', groupSize: 4 });
+  R.startSession(c, s);
+  const m = s.matches.find(x => x.court);
+  const d = R.decodeSheet(R.encodeSheet(R.sheetData(c, s, m)));
+  assert.equal(d.a, c.students.find(p => p.id === m.a).name);
+  assert.equal(d.t, m.court);
+  // Côté tablette : code de résultat
+  const code = R.resultCode(d, { sa: 11, sb: 7 });
+  assert.match(code, /^RE1\.[0-9A-HJKMNP-TV-Z]{6}\.[0-9A-HJKMNP-TV-Z]{6}\.11\.7\.[0-9A-HJKMNP-TV-Z]{7}$/);
+  assert.ok(R.parseResultCode(code.toLowerCase().replace(/0/g, 'o').replace(/1/g, 'l')).ok, 'saisie tolérante (minuscules, O/0, L/1)');
+  assert.throws(() => R.resultCode(d, { sa: 5, sb: 5 }), /nul/);
+  // Côté enseignant
+  const r = R.applyResultCode(c, s, code.toLowerCase());
+  assert.ok(r.ok, r.error);
+  assert.ok(m.done && m.sa === 11 && m.sb === 7);
+  assert.ok(R.applyResultCode(c, s, code).already, 'second scan : déjà enregistré, rien ne change');
+  // Résultat différent : confirmation
+  const other = R.resultCode(d, { sa: 3, sb: 11 });
+  const r2 = R.applyResultCode(c, s, other);
+  assert.ok(!r2.ok && r2.needsConfirm);
+  assert.ok(R.applyResultCode(c, s, other, { confirm: true }).ok);
+  assert.equal(m.sb, 11);
+  // Forfait
+  const m2 = s.matches.find(x => x.court && !x.done);
+  const d2 = R.decodeSheet(R.encodeSheet(R.sheetData(c, s, m2)));
+  assert.ok(R.applyResultCode(c, s, R.resultCode(d2, { forfeit: 'b' })).ok);
+  assert.equal(m2.forfeit, m2.b);
+});
+
+test('QR : codes refusés (faute de frappe, autre séance, inconnu, illisible)', () => {
+  const c = makeClass(8, 2);
+  const s = newSession(c, { mode: 'pools', groupSize: 4 });
+  R.startSession(c, s);
+  const m = s.matches.find(x => x.court);
+  const d = R.sheetData(c, s, m);
+  const code = R.resultCode(d, { sa: 11, sb: 7 });
+  assert.match(R.applyResultCode(c, s, code.replace('.11.7.', '.11.8.')).error, /contrôle/);
+  assert.match(R.applyResultCode(c, s, 'bonjour').error, /pas un code/);
+  assert.match(R.applyResultCode(c, s, code.replace(d.s, 'ZZZZZZ')).error, /autre séance/);
+  assert.match(R.applyResultCode(c, s, code.replace(d.m, 'ZZZZZZ')).error, /introuvable/);
+  assert.throws(() => R.decodeSheet('!!!'));
+  assert.ok(!m.done, 'aucun code refusé n\'a modifié le match');
+  // Le jeton est propre à la séance : un faux code avec un autre jeton est refusé
+  const forged = R.resultCode(Object.assign({}, d, { k: 'aaaaaa' }), { sa: 11, sb: 0 });
+  assert.match(R.applyResultCode(c, s, forged).error, /contrôle/);
+});
+
+test('Groupes de travail : serpentin équilibré, par niveau, absents exclus, effectifs à ±1', () => {
+  const ids = Array.from({ length: 10 }, (_, i) => 'r' + (i + 1));
+  // Serpentin : T1 T2 T3 | T3 T2 T1 | T1 T2 T3 | T3
+  assert.deepEqual(R.makeWorkGroups(ids, 3, 'balanced'), [['r1', 'r6', 'r7'], ['r2', 'r5', 'r8'], ['r3', 'r4', 'r9', 'r10']]);
+  assert.deepEqual(R.makeWorkGroups(ids, 3, 'level'), [['r1', 'r2', 'r3', 'r4'], ['r5', 'r6', 'r7'], ['r8', 'r9', 'r10']]);
+  assert.equal(R.makeWorkGroups(['a', 'b'], 6, 'balanced').length, 2, 'pas plus de groupes que d\'élèves');
+  for (const n of [5, 7, 12, 24, 25]) for (const k of [1, 2, 3, 6]) for (const mode of ['balanced', 'level']) {
+    const g = R.makeWorkGroups(Array.from({ length: n }, (_, i) => 'x' + i), k, mode);
+    const sizes = g.map(x => x.length);
+    assert.equal(sizes.reduce((a, b) => a + b, 0), n);
+    assert.equal(new Set(g.flat()).size, n);
+    assert.ok(Math.max(...sizes) - Math.min(...sizes) <= 1, `${n}/${k}/${mode}`);
+  }
+  // Sur une vraie classe : moyennes plus proches en serpentin qu'en groupes de niveau
+  const c = R.createDemoClass({ students: 24, sessions: 3, seed: 'groupes' });
+  const absent = [c.students[0].id];
+  assert.ok(R.buildWorkGroups(c, { courts: 4, mode: 'balanced', absent }).ok);
+  assert.ok(!c.workGroups.groups.flat().includes(absent[0]));
+  assert.equal(c.workGroups.groups.flat().length, 23);
+  const bal = R.workGroupStats(c).spread;
+  R.buildWorkGroups(c, { mode: 'level' });
+  const lvl = R.workGroupStats(c).spread;
+  assert.ok(bal < lvl / 3, `serpentin ${bal.toFixed(1)} vs niveau ${lvl.toFixed(1)}`);
+  assert.equal(c.workGroups.courts, 4, 'réglages conservés');
+  // Déplacement manuel, Elo inchangé
+  const before = R.ranks(c).map(p => p.elo);
+  const id = c.workGroups.groups[0][0];
+  assert.ok(R.moveWorkGroup(c, id, 3).ok);
+  assert.ok(c.workGroups.groups[3].includes(id));
+  assert.deepEqual(R.ranks(c).map(p => p.elo), before);
+});
+
+test('Feuille de poule : tous les matchs de la poule, un code pour toute la poule', () => {
+  const c = makeClass(10, 2);
+  const s = newSession(c, { mode: 'pools', groupSize: 5 });
+  R.startSession(c, s);
+  const gi = 1, g = s.groups[gi], ms = R.groupMatches(s, gi);
+  assert.equal(ms.length, 10, 'poule de 5 : 10 matchs');
+  const d = R.decodePoolSheet(R.encodeSheet(R.poolSheetData(c, s, gi)));
+  assert.equal(d.p.length, 5);
+  assert.equal(d.pairs.length, 10);
+  d.pairs.forEach(([a, b], i) => { assert.equal(g[a], ms[i].a); assert.equal(g[b], ms[i].b); });
+  // URL compacte : le QR reste petit
+  assert.ok(R.encodeSheet(R.poolSheetData(c, s, gi)).length < 400);
+  // Les élèves jouent tous leurs matchs (dont un forfait), un match reste non joué
+  const results = d.pairs.map((_, i) => (i === 9 ? null : i === 3 ? { forfeit: 'b' } : (i % 2 ? { sa: 11, sb: i } : { sa: i, sb: 11 })));
+  const code = R.poolResultCode(d, results);
+  assert.match(code, /^RP1\.[0-9A-Z]{6}\.1\..+\.[0-9A-Z]{7}$/);
+  assert.throws(() => R.poolResultCode(d, d.pairs.map(() => ({ sa: 5, sb: 5 }))), /nul/);
+  assert.throws(() => R.poolResultCode(d, d.pairs.map(() => null)), /Aucun match/);
+  const r = R.applyAnyCode(c, s, code);
+  assert.ok(r.ok, r.error);
+  assert.equal(r.kind, 'pool');
+  assert.deepEqual([r.recorded, r.unchanged, r.skipped], [9, 0, 1]);
+  assert.ok(ms.slice(0, 9).every(m => m.done) && !ms[9].done);
+  assert.equal(ms[3].forfeit, ms[3].b);
+  assert.equal(ms[1].sa, 11);
+  // Second scan : rien ne change
+  const again = R.applyPoolResultCode(c, s, code);
+  assert.deepEqual([again.recorded, again.unchanged], [0, 9]);
+  // Correction sur la tablette puis nouveau code : confirmation des résultats différents
+  results[0] = { sa: 11, sb: 0 }; results[9] = { sa: 11, sb: 8 };
+  const code2 = R.poolResultCode(d, results);
+  const r2 = R.applyPoolResultCode(c, s, code2);
+  assert.ok(r2.needsConfirm && r2.conflicts === 1);
+  const r3 = R.applyPoolResultCode(c, s, code2, { confirm: true });
+  assert.deepEqual([r3.recorded, r3.unchanged, r3.skipped], [2, 8, 0]);
+  assert.ok(ms.every(m => m.done));
+  // Codes refusés
+  assert.match(R.applyPoolResultCode(c, s, code2.replace(',11:8.', ',11:9.')).error, /contrôle/);
+  assert.match(R.applyPoolResultCode(c, s, code2.replace('RP1.' + d.s, 'RP1.ZZZZZZ')).error, /autre séance/);
+  assert.match(R.applyPoolResultCode(c, s, 'RP1.' + d.s + '.7.11:2.ABCDEFG').error, /introuvable/);
+  // La séance peut être clôturée, les résultats comptent pour l'Elo
+  playSession(c, s, rng(4));
+  assert.ok(R.closeSession(c, s).ok);
 });

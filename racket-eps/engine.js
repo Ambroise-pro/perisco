@@ -179,6 +179,7 @@
       permutation: opts.permutation === 'none' ? 'none' : 'swap',
       tiebreak: TIEBREAKS[opts.tiebreak] ? opts.tiebreak : 'h2h-diff-pf',
       k: c.k != null ? c.k : 32,
+      courts: Math.max(1, c.courts || 1), closedCourts: [],
       byes: [], moves: [], phase: mode === 'reclass' ? 'brassage' : null, divisions: []
     };
     c.sessions.push(s);
@@ -301,6 +302,7 @@
     if (s.positions.length < 2) return fail('Il faut au moins 2 élèves présents.');
     if (s.groups && s.groups.some(g => g.length < 2)) return fail('Chaque groupe doit compter au moins 2 élèves.');
     s.status = 'playing';
+    ensureQrToken(s);
     s.round = 1;
     s.order = s.positions.slice(); // rang local de départ (jeu du défi, départages)
     if (s.mode === 'pools' || s.mode === 'reclass') {
@@ -347,13 +349,31 @@
    * joueurs n'est déjà sur un terrain. Priorité : ronde la plus ancienne, puis ordre de création ;
    * le terrain « préféré » (celui du groupe) est choisi s'il est libre.
    */
+  /*
+   * Terrains de la séance. Le nombre de terrains de la classe sert de valeur par défaut à la
+   * création ; pendant la séance, l'enseignant peut en ajouter, en retirer ou fermer un terrain
+   * précis (s.closedCourts) sans toucher au réglage de la classe ni aux séances passées.
+   */
+  function totalCourts(c, s) {
+    return Math.max(1, (s && s.courts) || c.courts || 1);
+  }
+
+  function availableCourts(c, s) {
+    const closed = new Set((s && s.closedCourts) || []);
+    const out = [];
+    for (let t = 1; t <= totalCourts(c, s); t++) if (!closed.has(t)) out.push(t);
+    return out;
+  }
+
   function autoAssign(c, s) {
     if (s.status !== 'playing') return [];
-    const courts = Math.max(1, c.courts || 1);
+    const avail = availableCourts(c, s);
+    const open = new Set(avail);
     const busyCourts = new Set(), busy = new Set();
     s.matches.forEach(m => {
       if (m.court && !m.done) {
-        if (m.court > courts) { m.court = null; return; }
+        // Terrain retiré ou fermé : le match retourne en file d'attente.
+        if (!open.has(m.court)) { m.court = null; return; }
         busyCourts.add(m.court); busy.add(m.a); busy.add(m.b);
       }
     });
@@ -362,16 +382,53 @@
       .filter(x => !x.m.done && !x.m.court && x.m.a && x.m.b)
       .sort((x, y) => (x.m.round - y.m.round) || (x.i - y.i));
     for (const { m } of queue) {
-      if (busyCourts.size >= courts) break;
+      if (busyCourts.size >= avail.length) break;
       if (busy.has(m.a) || busy.has(m.b)) continue;
-      let court = m.pref && m.pref <= courts && !busyCourts.has(m.pref) ? m.pref : null;
-      if (!court) for (let t = 1; t <= courts; t++) if (!busyCourts.has(t)) { court = t; break; }
+      let court = m.pref && open.has(m.pref) && !busyCourts.has(m.pref) ? m.pref : null;
+      if (!court) court = avail.find(t => !busyCourts.has(t)) || null;
       if (!court) break;
       m.court = court;
       busyCourts.add(court); busy.add(m.a); busy.add(m.b);
       assigned.push(m.id);
     }
     return assigned;
+  }
+
+  function courtChange(c, s, mutate, opts) {
+    if (s.status === 'closed') return fail('Séance clôturée.');
+    const sim = clone(s);
+    mutate(sim);
+    const open = new Set(availableCourts(c, sim));
+    if (!open.size) return fail('Il faut garder au moins un terrain disponible.');
+    const displaced = s.matches.filter(m => m.court && !m.done && !open.has(m.court));
+    if (displaced.length && !(opts && opts.confirm)) {
+      return fail(displaced.length + ' match(s) en cours sur un terrain retiré (' + displaced.map(m => 'terrain ' + m.court).join(', ') +
+        ') : ' + (displaced.length > 1 ? 'ils retourneront' : 'il retournera') + ' en file d\'attente, score non saisi.', { needsConfirm: true, displaced: displaced.map(m => m.id) });
+    }
+    mutate(s);
+    const assigned = autoAssign(c, s);
+    return { ok: true, assigned, displaced: displaced.map(m => m.id) };
+  }
+
+  /** Change le nombre de terrains de la séance (1 à 30). */
+  function setSessionCourts(c, s, n, opts) {
+    n = Math.floor(Number(n));
+    if (!(n >= 1 && n <= 30)) return fail('Nombre de terrains entre 1 et 30.');
+    return courtChange(c, s, x => {
+      x.courts = n;
+      x.closedCourts = (x.closedCourts || []).filter(t => t <= n);
+    }, opts);
+  }
+
+  /** Ferme (indisponible) ou rouvre un terrain précis pendant la séance. */
+  function setCourtClosed(c, s, t, closed, opts) {
+    t = Math.floor(Number(t));
+    if (!(t >= 1 && t <= totalCourts(c, s))) return fail('Terrain inexistant.');
+    return courtChange(c, s, x => {
+      const set = new Set(x.closedCourts || []);
+      if (closed) set.add(t); else set.delete(t);
+      x.closedCourts = Array.from(set).sort((a, b2) => a - b2);
+    }, opts);
   }
 
   function matchState(m) {
@@ -937,6 +994,270 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * Groupes de travail (hors séance) : répartition des présents sur N terrains
+   * ------------------------------------------------------------------ *
+   * À partir du classement Elo (meilleur en premier) :
+   *  - 'balanced' (équilibrés) : distribution en serpentin — T1, T2, …, Tn puis Tn, …, T1 — pour
+   *    que chaque terrain ait un niveau moyen proche ;
+   *  - 'level' (par niveau) : blocs consécutifs — les meilleurs au terrain 1.
+   * Les effectifs par terrain diffèrent au plus d'un élève. N'affecte jamais l'Elo.
+   */
+  function makeWorkGroups(rankedIds, courts, mode) {
+    const n = rankedIds.length;
+    const k = Math.max(1, Math.min(Math.floor(courts) || 1, n || 1));
+    if (mode === 'level') return balancedGroups(rankedIds, k);
+    const groups = Array.from({ length: k }, () => []);
+    rankedIds.forEach((id, i) => {
+      const pass = Math.floor(i / k), pos = i % k;
+      groups[pass % 2 === 0 ? pos : k - 1 - pos].push(id);
+    });
+    return groups.filter(g => g.length);
+  }
+
+  /** Crée ou recalcule les groupes de travail de la classe (c.workGroups). */
+  function buildWorkGroups(c, opts) {
+    opts = opts || {};
+    const prev = c.workGroups || {};
+    const courts = clampInt(opts.courts != null ? opts.courts : prev.courts, 1, 30, c.courts || 4);
+    const mode = (opts.mode || prev.mode) === 'level' ? 'level' : 'balanced';
+    const absent = (opts.absent || prev.absent || []).filter(id => c.students.some(p => p.id === id));
+    const ranked = ranks(c).filter(p => !absent.includes(p.id)).map(p => p.id);
+    if (!ranked.length) return fail('Aucun élève présent.');
+    c.workGroups = { courts, mode, absent, groups: makeWorkGroups(ranked, courts, mode), createdAt: Date.now() };
+    return { ok: true };
+  }
+
+  function moveWorkGroup(c, id, to) {
+    const wg = c.workGroups;
+    if (!wg) return fail('Aucun groupe de travail.');
+    const from = wg.groups.findIndex(g => g.includes(id));
+    if (from < 0 || to < 0 || to >= wg.groups.length) return fail('Déplacement impossible.');
+    if (from === to) return { ok: true };
+    wg.groups[from] = wg.groups[from].filter(x => x !== id);
+    wg.groups[to].push(id);
+    return { ok: true };
+  }
+
+  /** Statistiques par groupe : effectif, Elo moyen ; écart entre la moyenne la plus haute et la plus basse. */
+  function workGroupStats(c) {
+    const wg = c.workGroups;
+    if (!wg) return null;
+    const st = computeStats(c);
+    const groups = wg.groups.map(g => ({ size: g.length, avg: g.length ? g.reduce((a, id) => a + (st[id] ? st[id].elo : 0), 0) / g.length : 0 }));
+    const avgs = groups.filter(g => g.size).map(g => g.avg);
+    return { groups, spread: avgs.length ? Math.max(...avgs) - Math.min(...avgs) : 0 };
+  }
+
+  /* ------------------------------------------------------------------ *
+   * QR codes : aller-retour hors ligne entre tablettes élèves et appareil enseignant
+   * ------------------------------------------------------------------ *
+   * Les données restent sur l'appareil de l'enseignant (aucun serveur). Le QR d'un match ouvre
+   * sur la tablette une « feuille de match » autonome (noms, terrain, score cible) ; en fin de
+   * match, la tablette affiche un code de résultat (QR + texte court) que l'enseignant scanne.
+   * Code : RE1.<séance>.<match>.<x>.<y>.<contrôle>, avec x.y = score A.B, ou F.a / F.b (forfait
+   * du joueur A ou B). Le contrôle est une empreinte calculée avec un jeton propre à la séance :
+   * il détecte les erreurs de saisie et les codes d'une autre séance (ce n'est pas un chiffrement).
+   */
+  function shortHash(str) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    // Base 32 de Crockford (sans I, L, O, U) : lisible et dictable sans confusion.
+    const A = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+    let n = h >>> 0, out = '';
+    for (let i = 0; i < 7; i++) { out = A[n % 32] + out; n = Math.floor(n / 32); }
+    return out;
+  }
+  const shortId = id => shortHash('id:' + id).slice(0, 6);
+
+  function ensureQrToken(s) {
+    if (!s.qrToken) s.qrToken = shortHash(uid() + ':' + Math.random()).slice(0, 6);
+    return s.qrToken;
+  }
+
+  function utf8ToB64url(str) {
+    let b64;
+    if (typeof btoa === 'function') b64 = btoa(unescape(encodeURIComponent(str)));
+    else b64 = Buffer.from(str, 'utf8').toString('base64');
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function b64urlToUtf8(b) {
+    const b64 = b.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b.length + 3) % 4);
+    if (typeof atob === 'function') return decodeURIComponent(escape(atob(b64)));
+    return Buffer.from(b64, 'base64').toString('utf8');
+  }
+
+  /** Données de la feuille de match (affichée sur la tablette, sans accès à la base). */
+  function sheetData(c, s, m) {
+    const nm = id => (c.students.find(p => p.id === id) || {}).name || '?';
+    return { v: 1, s: shortId(s.id), m: shortId(m.id), a: nm(m.a), b: nm(m.b), t: m.court || null, g: s.target || 11, k: ensureQrToken(s), n: s.seq };
+  }
+  function encodeSheet(d) { return utf8ToB64url(JSON.stringify(d)); }
+  function decodeSheet(str) {
+    const d = JSON.parse(b64urlToUtf8(String(str || '')));
+    if (!d || d.v !== 1 || !d.s || !d.m || !d.k || !d.a || !d.b) throw new Error('Feuille de match illisible.');
+    return d;
+  }
+
+  /** Code de résultat produit par la tablette. r = { sa, sb } ou { forfeit: 'a' | 'b' }. */
+  function resultCode(d, r) {
+    let x, y;
+    if (r.forfeit) { x = 'F'; y = r.forfeit === 'a' ? 'a' : 'b'; }
+    else {
+      const err = validateScore(r.sa, r.sb);
+      if (err) throw new Error(err);
+      x = String(Number(r.sa)); y = String(Number(r.sb));
+    }
+    return ['RE1', d.s, d.m, x, y, shortHash([d.k, d.s, d.m, x, y].join('|'))].join('.');
+  }
+
+  function parseResultCode(text) {
+    // Tolère minuscules, espaces et confusions courantes (O→0, I/L→1).
+    const t = String(text || '').trim().replace(/\s+/g, '').toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1');
+    const parts = t.split('.');
+    if (parts.length !== 6 || parts[0] !== 'RE1') return { ok: false, error: 'Ce n\'est pas un code de résultat Racket EPS.' };
+    const [, sid, mid, x, y, h] = parts;
+    const forfeit = x.toUpperCase() === 'F';
+    if (forfeit && !/^[AB]$/.test(y)) return { ok: false, error: 'Code de forfait invalide.' };
+    if (!forfeit && (!/^\d{1,3}$/.test(x) || !/^\d{1,3}$/.test(y))) return { ok: false, error: 'Score illisible dans le code.' };
+    return { ok: true, sid, mid, x: forfeit ? 'F' : x, y: forfeit ? y.toLowerCase() : y, h, forfeit };
+  }
+
+  /**
+   * Enregistre un résultat scanné dans la séance active. Vérifie la séance, le match et le code
+   * de contrôle. Un match déjà saisi avec le même résultat est signalé sans rien modifier ; avec
+   * un résultat différent, une confirmation est demandée (opts.confirm).
+   */
+  function applyResultCode(c, s, text, opts) {
+    opts = opts || {};
+    const p = parseResultCode(text);
+    if (!p.ok) return fail(p.error);
+    if (!s || s.status !== 'playing') return fail('Aucune séance en cours.');
+    if (shortId(s.id) !== p.sid) return fail('Ce code provient d\'une autre séance.');
+    const ms = s.matches.filter(m => shortId(m.id) === p.mid);
+    if (ms.length !== 1) return fail(ms.length ? 'Code ambigu : saisissez ce résultat à la main.' : 'Match introuvable dans cette séance.');
+    const m = ms[0];
+    if (!s.qrToken || shortHash([s.qrToken, p.sid, p.mid, p.x, p.y].join('|')) !== p.h) return fail('Code de contrôle incorrect : code mal recopié ou modifié.');
+    if (!m.a || !m.b) return fail('Les joueurs de ce match ne sont pas encore connus.');
+    const input = p.forfeit ? { forfeit: p.y === 'a' ? m.a : m.b } : { sa: Number(p.x), sb: Number(p.y) };
+    const same = m.done && (input.forfeit ? m.forfeit === input.forfeit : (!m.forfeit && m.sa === input.sa && m.sb === input.sb));
+    if (same) return { ok: true, already: true, match: m, input };
+    if (m.done && !opts.confirm) return fail('Ce match a déjà un résultat différent (' + (m.forfeit ? 'forfait' : m.sa + ' – ' + m.sb) + ') : le remplacer ?', { needsConfirm: true, match: m, input });
+    const r = recordResult(c, s, m.id, input, opts);
+    return Object.assign({}, r, { match: m, input });
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Feuille de poule (poules classiques en autonomie)
+   * ------------------------------------------------------------------ *
+   * Le QR d'une poule ouvre sur la tablette TOUS les matchs de la poule. Les élèves les jouent,
+   * saisissent chaque score, puis la tablette affiche UN code pour toute la poule :
+   *   RP1.<séance>.<n° de poule>.<résultats>.<contrôle>
+   * <résultats> = un élément par match, dans l'ordre de la poule, séparés par « , » :
+   *   « 11:4 » (score A:B), « FA » / « FB » (forfait du joueur A / B), « - » (non joué).
+   * Les joueurs d'un match sont désignés par leur rang dans la poule (0, 1, 2… en base 36).
+   */
+  function groupMatches(s, gi) {
+    return s.matches.filter(m => m.group === gi && m.phase !== 'classement');
+  }
+
+  function poolSheetData(c, s, gi) {
+    const g = (s.groups || [])[gi];
+    if (!g) throw new Error('Poule introuvable.');
+    const nm = id => (c.students.find(p => p.id === id) || {}).name || '?';
+    const idx = id => g.indexOf(id).toString(36);
+    return {
+      v: 1, kind: 'pool', s: shortId(s.id), g: gi, k: ensureQrToken(s), n: s.seq, t: s.target || 11,
+      p: g.map(nm),
+      m: groupMatches(s, gi).map(m => idx(m.a) + idx(m.b)).join('')
+    };
+  }
+
+  function decodePoolSheet(str) {
+    const d = JSON.parse(b64urlToUtf8(String(str || '')));
+    if (!d || d.v !== 1 || d.kind !== 'pool' || !d.s || !d.k || !Array.isArray(d.p) || typeof d.m !== 'string' || d.m.length % 2) throw new Error('Feuille de poule illisible.');
+    d.pairs = [];
+    for (let i = 0; i < d.m.length; i += 2) {
+      const a = parseInt(d.m[i], 36), b = parseInt(d.m[i + 1], 36);
+      if (!(a >= 0 && b >= 0 && a < d.p.length && b < d.p.length)) throw new Error('Feuille de poule illisible.');
+      d.pairs.push([a, b]);
+    }
+    return d;
+  }
+
+  /** Code de résultat de la poule. results[i] = { sa, sb } | { forfeit: 'a'|'b' } | null (non joué). */
+  function poolResultCode(d, results) {
+    const items = d.pairs.map((_, i) => {
+      const r = results[i];
+      if (!r) return '-';
+      if (r.forfeit) return r.forfeit === 'a' ? 'FA' : 'FB';
+      const err = validateScore(r.sa, r.sb);
+      if (err) throw new Error('Match ' + (i + 1) + ' : ' + err);
+      return Number(r.sa) + ':' + Number(r.sb);
+    });
+    if (items.every(x => x === '-')) throw new Error('Aucun match saisi.');
+    const list = items.join(',');
+    return ['RP1', d.s, String(d.g), list, shortHash([d.k, d.s, d.g, list].join('|'))].join('.');
+  }
+
+  function parsePoolResultCode(text) {
+    const t = String(text || '').trim().replace(/\s+/g, '').toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1');
+    const parts = t.split('.');
+    if (parts.length !== 5 || parts[0] !== 'RP1') return { ok: false, error: 'Ce n\'est pas un code de poule Racket EPS.' };
+    const [, sid, g, list, h] = parts;
+    if (!/^\d{1,2}$/.test(g)) return { ok: false, error: 'Numéro de poule illisible.' };
+    const items = list.split(',');
+    for (const it of items) if (!/^(\d{1,3}:\d{1,3}|FA|FB|-)$/.test(it)) return { ok: false, error: 'Résultat illisible dans le code : ' + it };
+    return { ok: true, sid, g: Number(g), list, items, h };
+  }
+
+  /**
+   * Enregistre tous les résultats d'une poule scannés en une fois. Vérifie séance, poule, joueurs
+   * et contrôle. Les matchs non joués sont ignorés ; un match déjà saisi avec un résultat
+   * différent demande une confirmation (opts.confirm) ; les résultats identiques sont laissés tels quels.
+   */
+  function applyPoolResultCode(c, s, text, opts) {
+    opts = opts || {};
+    const p = parsePoolResultCode(text);
+    if (!p.ok) return fail(p.error);
+    if (!s || s.status !== 'playing') return fail('Aucune séance en cours.');
+    if (shortId(s.id) !== p.sid) return fail('Ce code provient d\'une autre séance.');
+    const g = (s.groups || [])[p.g];
+    if (!g) return fail('Poule introuvable dans cette séance.');
+    if (!s.qrToken || shortHash([s.qrToken, p.sid, p.g, p.list].join('|')) !== p.h) return fail('Code de contrôle incorrect : code mal recopié ou modifié.');
+    const ms = groupMatches(s, p.g);
+    if (ms.length !== p.items.length) return fail('Le nombre de matchs ne correspond pas à cette poule.');
+    const plan = [];
+    p.items.forEach((it, i) => {
+      if (it === '-') return;
+      const m = ms[i];
+      let input;
+      if (it === 'FA' || it === 'FB') input = { forfeit: it === 'FA' ? m.a : m.b };
+      else { const [x, y] = it.split(':').map(Number); input = { sa: x, sb: y }; }
+      const same = m.done && (input.forfeit ? m.forfeit === input.forfeit : (!m.forfeit && m.sa === input.sa && m.sb === input.sb));
+      plan.push({ m, input, same, conflict: m.done && !same });
+    });
+    const conflicts = plan.filter(x => x.conflict);
+    if (conflicts.length && !opts.confirm) {
+      return fail(conflicts.length + ' match(s) de la poule ' + (p.g + 1) + ' ont déjà un résultat différent : les remplacer ?', { needsConfirm: true, conflicts: conflicts.length });
+    }
+    let recorded = 0, unchanged = 0;
+    for (const x of plan) {
+      if (x.same) { unchanged++; continue; }
+      const r = recordResult(c, s, x.m.id, x.input, { confirm: true });
+      if (!r.ok) return fail('Match ' + (ms.indexOf(x.m) + 1) + ' : ' + r.error);
+      recorded++;
+    }
+    return { ok: true, pool: p.g, recorded, unchanged, skipped: p.items.length - plan.length, total: p.items.length };
+  }
+
+  /** Aiguillage : code d'un match (RE1) ou d'une poule (RP1). */
+  function applyAnyCode(c, s, text, opts) {
+    const t = String(text || '').trim().toUpperCase();
+    if (t.indexOf('RP1.') === 0) return Object.assign({ kind: 'pool' }, applyPoolResultCode(c, s, text, opts));
+    return Object.assign({ kind: 'match' }, applyResultCode(c, s, text, opts));
+  }
+
+  /* ------------------------------------------------------------------ *
    * Persistance : schéma versionné, migration, validation
    * ------------------------------------------------------------------ */
   function emptyDB() { return { schemaVersion: SCHEMA_VERSION, classes: [], active: null }; }
@@ -1116,11 +1437,15 @@
     uid, clone, isSporting, winnerOf, loserOf, validateScore, expected, sessionDeltas, computeStats, ranks,
     activeSession, createSession, presentIds, proposePlacement, setAbsent, moveToGroup, shiftPosition, placementWarnings,
     balancedGroups, groupCount, makeGroups, startSession, roundRobin, autoAssign, matchState,
+    totalCourts, availableCourts, setSessionCourts, setCourtClosed,
     recordResult, clearResult, resolve, sessionStandings, minCostPerfectMatching,
     nextRound, canNextRound, groupRanking, rankGroup, TIEBREAKS, challengeOrder, addChallenge, removeMatch,
     divisionFormat, validatePartition, describePartition, proposePartitions, seedOrder, brassageRanking,
     canBuildClassement, buildClassement, reclassPlaces,
     canClose, closeSession, cancelSession, reopenSession,
+    makeWorkGroups, buildWorkGroups, moveWorkGroup, workGroupStats,
+    shortHash, shortId, ensureQrToken, sheetData, encodeSheet, decodeSheet, resultCode, parseResultCode, applyResultCode,
+    groupMatches, poolSheetData, decodePoolSheet, poolResultCode, parsePoolResultCode, applyPoolResultCode, applyAnyCode,
     emptyDB, migrate, validateDB, parseDB, addStudents, renameStudent, nameKey, createDemoClass, DEMO_NAMES
   };
 });

@@ -10,8 +10,24 @@ index.html   page
 engine.js    moteur pur et testé (Elo, formats, terrains, persistance) — window.RacketEngine
 app.js       interface
 style.css    styles (repris du prototype V1)
-tests/       tests du moteur (node --test) et parcours navigateur (Playwright)
+qr.js        générateur de QR codes (sans dépendance) — window.RacketQR
+tests/       tests du moteur et du générateur QR (node --test), parcours navigateur (Playwright)
 ```
+
+## Interface pensée pour la tablette
+L'application se pilote principalement **au toucher, avec de gros boutons**, sur une tablette tenue à l'horizontale.
+- **Barre de navigation en bas**, à portée de pouce : Accueil, Séance, Groupes, Classement, Élèves. L'Historique, la sauvegarde (export JSON) et les Réglages sont des boutons-icônes en haut à droite. La classe se choisit avec le grand bouton en haut à gauche.
+- **Accueil** : un très grand bouton « Lancer la séance » (ou « Reprendre »), le podium Elo et des tuiles vers les autres écrans.
+- **Nouvelle séance sans clavier** : le format se choisit sur de grandes cartes, les rondes et l'écart de défi se règlent avec − / +, les autres options sont des boutons à choix unique (élèves par groupe, score cible, variante, matchs, départage). La date utilise le sélecteur natif.
+- **Appel au toucher** : une tuile par élève ; un toucher le marque absent (barré, bordure pointillée, croix), un second le remet présent. Le décompte s'affiche en direct, avec un bouton « Tous présents ».
+- **Saisie du score en grand panneau**, sans champ numérique :
+  - on y accède en touchant le terrain dessiné, ou par « Saisir le score » sur un terrain ou un match ;
+  - boutons − / + de 88 px, et un bouton « X gagne : 11 » qui met directement le score cible ;
+  - la validation est bloquée en cas d'égalité, avec un rappel de jouer le point décisif ;
+  - « Plus… » donne accès au forfait, au QR et à l'effacement.
+- **Zones tactiles** de 52 à 100 px, texte à partir de 17 px, contrastes renforcés (boutons principaux vert d'eau sur texte sombre). Les états ne reposent jamais sur la couleur seule.
+
+Le clavier ne sert plus qu'à saisir les noms des élèves, une fois par classe (collage d'une liste possible), et à la saisie manuelle d'un code de résultat quand la caméra ne lit pas les QR.
 
 ## Règles métier implémentées
 - **Elo figé pendant la séance.** Chaque match validé contribue `K × (S − E)` avec les Elo de **début** de séance. Les variations sont sommées puis appliquées toutes en même temps à la clôture, donc l'ordre de saisie ne change rien. La précision est conservée en mémoire ; l'arrondi ne se fait qu'à l'affichage.
@@ -20,6 +36,11 @@ tests/       tests du moteur (node --test) et parcours navigateur (Playwright)
 - **Politique des forfaits :** un forfait donne la victoire au tournoi de la séance, mais **ni Elo, ni points marqués ou encaissés**. Il est comptabilisé à part (victoires et défaites par forfait).
 - **Deux classements distincts :** le classement de la séance (points de tournoi) et le classement Elo du cycle.
 - **Placement :** il est proposé dans l'ordre Elo, sans les absents. L'enseignant ajuste (groupes ou ordre), puis **valide**. Le placement validé est exactement celui qui sert à générer les matchs.
+- **Terrains modifiables en cours de séance** (onglet Séance, « Terrains disponibles − / + », et bouton « Fermer » sur chaque terrain) :
+  - on peut ajouter ou retirer un terrain, ou en fermer un précis (pas forcément le dernier), puis le rouvrir ;
+  - un match en cours sur un terrain retiré retourne en file d'attente, après confirmation ;
+  - les matchs sont réaffectés aussitôt, et il reste toujours au moins un terrain ouvert ;
+  - ce réglage ne vaut que pour la séance : le nombre de terrains de la classe (Réglages) reste la valeur par défaut des prochaines séances.
 - **Terrains :** un terrain accueille un seul match à la fois, et un élève ne joue jamais deux matchs simultanés. Les matchs attendent un terrain libre (file d'attente), et le terrain du groupe est privilégié quand il est libre.
 
 ## Formats
@@ -31,6 +52,54 @@ tests/       tests du moteur (node --test) et parcours navigateur (Playwright)
 | Montante-descendante par groupes | Mini-poule complète par terrain, avec 1 ou 2 montées et descentes. Les déplacements sont affichés (↑/↓) et ne touchent pas l'Elo. |
 | Ronde suisse | Appariement exact de coût minimal (revanches évitées quand c'est possible). L'exemption va en priorité à un élève qui n'en a pas eu, avec 1 point de tournoi et 0 Elo. |
 | Reclassement | Brassage en poules, puis divisions en **tableaux intégraux** (2, 4, 8, 16…) ou en poules de 3, 5 ou 6. Chaque place est attribuée une fois. Corriger un match en amont invalide les matchs en aval, après confirmation. |
+
+## Terrains dessinés selon le sport
+Les terrains sont dessinés vus de dessus, aux proportions réglementaires, selon le **sport de la classe** (Réglages) : badminton, tennis de table, pickleball, tennis, padel ; « Autre » donne un terrain neutre. Les élèves y sont **placés physiquement** :
+- **séance** : joueur A à gauche du filet (pastille jaune), joueur B à droite (pastille bleu clair) ; au tennis de table, en bout de table. Les remplaçants du groupe qui ne jouent sur aucun terrain attendent « sur le banc ». Un terrain libre ou fermé (grisé, hachuré) est signalé. Toucher un nom ouvre la fiche de l'élève, et « Saisir le score » fait défiler la page jusqu'au match ;
+- **projection** : les mêmes dessins en grand, avec le QR du match ;
+- **groupes de travail** : tous les élèves du groupe répartis sur les deux moitiés de leur terrain.
+
+Les identités ne reposent pas sur la couleur : chaque élève est nommé. Les cotes affichées dans la maquette de conception viennent des règlements usuels et méritent une vérification avant toute communication officielle.
+
+## Groupes de travail
+L'onglet **Groupes de travail** répartit les élèves présents sur un nombre de terrains choisi (− / +), sans créer de séance et sans toucher à l'Elo :
+- **Équilibrée** (par défaut) : distribution en serpentin selon le classement Elo (1ᵉʳ → T1, 2ᵉ → T2 … dernier terrain, puis retour). Chaque terrain a un niveau moyen comparable, et l'écart entre les moyennes est affiché.
+- **Par niveau** : les mieux classés au terrain 1, puis les suivants, etc.
+
+Les effectifs diffèrent au plus d'un élève. Un appel permet d'exclure les absents. On peut déplacer un élève à la main ; ces déplacements sont conservés jusqu'à la prochaine répartition. Les groupes sont mémorisés avec la classe et peuvent être imprimés.
+
+## Fiche élève
+La fiche s'ouvre dans une **fenêtre** (pop-up) quand on touche le nom d'un élève, depuis le classement, la liste des élèves ou les groupes de travail. Elle se ferme avec ✕, avec la touche Échap ou en touchant le fond.
+
+## QR codes : autonomie des élèves sur tablette
+Les données restent **sur l'appareil de l'enseignant**, sans serveur. Les résultats passent donc par un aller-retour de QR codes :
+1. **QR du match.** Il s'affiche sur l'appareil de l'enseignant (bouton « QR » d'un terrain, ou « QR de la feuille de match » dans les actions d'un match) et, si la case est cochée, sur chaque terrain en **projection**.
+2. **Feuille de match.** L'élève scanne le QR avec l'appareil photo de sa tablette. Une page s'ouvre avec les noms, le terrain, le score cible et de grands boutons + / −. La tablette n'enregistre **aucune donnée de la classe**, seulement le score en cours de ce match (conservé si la page se recharge).
+3. **Code de résultat.** En fin de match (« Terminer le match » ou « Forfait »), la tablette affiche un QR de résultat et un code court lisible, par exemple `RE1.K3Q9ZD.8V2MXA.11.4.7QJ0B2C`.
+4. **Mode scan.** L'enseignant ouvre « 📷 Mode scan » : une petite fenêtre avec l'aperçu de la caméra lit le QR présenté. Le code peut aussi être tapé ou dicté ; la saisie tolère minuscules, O/0 et I/L/1. Le résultat est vérifié, enregistré, puis signalé par un bip, avec un bouton « Annuler cette saisie ». On peut aussi décocher « Enregistrer dès la lecture » pour valider chaque résultat à la main.
+
+### Poules classiques en autonomie : une feuille pour toute la poule
+En poules classiques, chaque poule a son **QR de poule** : bouton « QR poule n » dans la séance, et affichage en projection si la case est cochée. La tablette ouvre alors une **feuille de poule** avec **tous les matchs de la poule**.
+- Pour chaque match : grands boutons + / −, « Valider ce match » ou « Forfait ».
+- Un mini-classement des victoires est mis à jour en direct. Les scores sont conservés si la page se recharge.
+- À la fin, « Terminer la poule » affiche **un seul QR de résultat** pour toute la poule, par exemple `RP1.3ATA1R.0.11:1,2:11,FB,4:11,11:5,6:11.04F8SC0`. Ce code contient un élément par match, dans l'ordre : score A:B, `FA` ou `FB` pour un forfait, `-` pour un match non joué.
+- Le mode scan reconnaît ce code et **enregistre tous les résultats d'un coup**. Les matchs non joués sont ignorés et les résultats identiques laissés tels quels ; un résultat différent d'un score déjà saisi demande une confirmation.
+- Une poule de 6 en aller-retour (30 matchs) tient dans un QR de version 14 pour le lien et de version 9 pour le résultat.
+
+Contrôles appliqués au scan :
+- le code doit appartenir à la séance en cours et au bon match ;
+- une **empreinte de contrôle**, calculée avec un jeton propre à la séance, rejette les codes mal recopiés ou modifiés (c'est une vérification, pas un chiffrement) ;
+- scanner deux fois le même code ne change rien ;
+- un résultat différent d'un score déjà saisi demande une confirmation ;
+- les conséquences en aval (tableaux de reclassement) sont confirmées comme pour une saisie manuelle.
+
+Conditions :
+- les tablettes doivent ouvrir l'application par son **adresse web**, par exemple l'adresse Vercel (Réglages → QR codes) ;
+- l'aperçu caméra du mode scan exige une page en `https` ;
+- les QR codes sont dessinés par **`qr.js`**, un générateur écrit pour l'application (norme ISO/IEC 18004, mode octets UTF-8, correction d'erreur M, versions 1 à 20), sans dépendance ;
+- la **lecture** par la caméra utilise le lecteur intégré du navigateur (`BarcodeDetector` : Chrome sur Android, Chromebook, Mac). Ailleurs (iPad, Windows), on tape le code texte affiché sous le QR de la tablette.
+
+Vérification du générateur : 67 QR (versions 1 à 20, les 8 masques, accents et émojis, liens de feuille de match, codes de résultat) ont été décodés à l'identique par un décodeur indépendant (OpenCV). Les QR affichés dans l'application (fenêtre du professeur et tablette) ont aussi été décodés à partir de captures d'écran. `tests/qr.test.js` vérifie le calcul Reed-Solomon sur le vecteur de référence de la norme et fige ces sorties validées.
 
 ## Classe exemple (pour tester)
 Le bouton **Classe exemple** (en haut, ou sur l'écran d'accueil) crée une classe de 4 à 40 élèves **fictifs** (pseudonymes d'animaux, aucun nom réel). On peut y ajouter 0 à 12 séances déjà jouées.
