@@ -3,91 +3,40 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Planning Extrascolaire</title>
+<meta name="description" content="Tournoi EPS : brassage et tableaux à classement intégral pour les sports de raquette. Fonctionne hors ligne, sans compte.">
+<meta name="theme-color" content="#1d4ed8">
+<title>Tournoi EPS</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
+<a class="skip-link" href="#view">Aller au contenu</a>
 <header class="topbar">
-  <h1>📅 Planning Extrascolaire</h1>
-  <div id="fileControls" class="file-controls">
-    <label class="btn btn-primary" for="fileInput">Choisir un fichier Excel</label>
-    <input type="file" id="fileInput" accept=".xls,.xlsx" hidden>
-    <span id="fileName" class="file-name"></span>
+  <div class="brand">
+    <span class="brand-icon" aria-hidden="true">🏸</span>
+    <span class="brand-name">Tournoi EPS</span>
+  </div>
+  <div class="tournament-switch">
+    <label for="tournamentSelect" class="sr-only">Tournoi affiché</label>
+    <select id="tournamentSelect"></select>
+    <button type="button" class="btn btn-small" data-action="new-tournament">Nouveau</button>
+    <label class="btn btn-small" for="importInput">Importer</label>
+    <input type="file" id="importInput" accept=".json,application/json" hidden>
   </div>
 </header>
 
-<main id="app">
+<nav class="tabs" role="tablist" aria-label="Sections du tournoi" id="tabs"></nav>
 
-  <section id="dropzone" class="dropzone">
-    <div class="dropzone-inner">
-      <div class="dropzone-icon">📂</div>
-      <p>Glissez-déposez le fichier Excel ici<br>ou cliquez sur « Choisir un fichier Excel »</p>
-      <p class="hint">Formats acceptés : .xls / .xlsx — le fichier est traité entièrement dans votre navigateur, aucune donnée n'est envoyée sur internet.</p>
-    </div>
-  </section>
+<div id="banner" class="banner" hidden></div>
 
-  <section id="workspace" class="workspace hidden">
+<main id="view" tabindex="-1"></main>
 
-    <nav class="viewTabs">
-      <button class="viewTab active" data-view="list">Liste des activités</button>
-      <button class="viewTab" data-view="planning">Planning semaine</button>
-    </nav>
+<div id="live" class="toast" role="status" aria-live="polite"></div>
 
-    <div class="threshold-control">
-      <label for="thresholdInput">Seuil d'alerte (nombre d'inscrits) :</label>
-      <input type="number" id="thresholdInput" min="0" value="5" autocomplete="off">
-      <span class="threshold-hint"><span class="dot dot-red"></span> si inscrits &lt; seuil &nbsp; <span class="dot dot-green"></span> si inscrits ≥ seuil</span>
-    </div>
+<dialog id="matchDialog" aria-labelledby="matchDialogTitle"></dialog>
 
-    <!-- LIST VIEW -->
-    <section id="view-list" class="view">
-      <div class="toolbar">
-        <input type="text" id="searchInput" placeholder="Rechercher une activité, un organisateur, un élève…">
-        <select id="dayFilter">
-          <option value="">Tous les jours</option>
-        </select>
-        <select id="classFilter">
-          <option value="">Toutes les classes</option>
-        </select>
-        <select id="sortSelect">
-          <option value="day">Trier par jour / horaire</option>
-          <option value="name">Trier par nom d'activité</option>
-          <option value="count-desc">Trier par nb d'inscrits (décroissant)</option>
-          <option value="count-asc">Trier par nb d'inscrits (croissant)</option>
-        </select>
-        <div class="toolbar-actions">
-          <button id="selectAllBtn" class="btn btn-small">Tout sélectionner</button>
-          <button id="selectNoneBtn" class="btn btn-small">Tout désélectionner</button>
-        </div>
-      </div>
-      <div class="summary" id="summaryBar"></div>
-      <div id="activityTableWrap"></div>
-    </section>
+<noscript><p class="card">Cette application nécessite JavaScript.</p></noscript>
 
-    <!-- PLANNING VIEW -->
-    <section id="view-planning" class="view hidden">
-      <div class="toolbar">
-        <span id="planningSelectionCount"></span>
-        <button id="goToListBtn" class="btn btn-small">← Modifier la sélection</button>
-      </div>
-      <div id="planningGrid" class="planning-grid"></div>
-      <div id="undatedList" class="undated-list"></div>
-    </section>
-
-  </section>
-
-</main>
-
-<!-- Modal for student list -->
-<div id="modalOverlay" class="modal-overlay hidden">
-  <div class="modal">
-    <button id="modalClose" class="modal-close">&times;</button>
-    <div id="modalContent"></div>
-  </div>
-</div>
-
-<script src="lib/xlsx.full.min.js"></script>
-<script src="app.js?v=2"></script>
+<script src="engine.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

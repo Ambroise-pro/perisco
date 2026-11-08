@@ -1,0 +1,2863 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<!-- Version autonome générée par tools/build-standalone.js — ne pas modifier à la main. -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Tournoi EPS : brassage et tableaux à classement intégral pour les sports de raquette. Fonctionne hors ligne, sans compte.">
+<meta name="theme-color" content="#1d4ed8">
+<title>Tournoi EPS</title>
+<style>
+/* Tournoi EPS — feuille de style (mobile d'abord, impression incluse) */
+:root {
+  --bg: #f3f5f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f6;
+  --text: #121826;
+  --muted: #4b5567;
+  --border: #cfd6e2;
+  --primary: #1d4ed8;
+  --primary-text: #ffffff;
+  --initial: #1d4ed8;
+  --upper: #15803d;
+  --lower: #c2410c;
+  --danger: #b91c1c;
+  --ok: #15803d;
+  --warn-bg: #fff7e6;
+  --warn-border: #f0b44c;
+  --focus: #f59e0b;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .08), 0 2px 8px rgba(16, 24, 40, .06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141c;
+    --surface: #18202b;
+    --surface-2: #222c3a;
+    --text: #eef2f7;
+    --muted: #a9b4c4;
+    --border: #344255;
+    --primary: #4f7cff;
+    --warn-bg: #3a2c12;
+    --warn-border: #a8742a;
+    --danger: #f06262;
+    --ok: #4ade80;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+h1, h2, h3 { line-height: 1.2; margin: 0 0 .6rem; }
+h2 { font-size: 1.15rem; }
+h3 { font-size: 1rem; }
+p { margin: .4rem 0; }
+a { color: var(--primary); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip-link { position: absolute; left: -9999px; }
+.skip-link:focus { left: 8px; top: 8px; z-index: 100; background: var(--surface); padding: 8px; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* Barre supérieure */
+.topbar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
+  padding: 10px 16px; background: var(--primary); color: var(--primary-text);
+}
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.1rem; }
+.tournament-switch { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tournament-switch select { max-width: 52vw; min-height: 40px; border-radius: 8px; border: 0; padding: 0 8px; font: inherit; }
+.topbar .btn { background: rgba(255,255,255,.15); color: #fff; border-color: rgba(255,255,255,.5); }
+
+/* Onglets */
+.tabs {
+  position: sticky; top: 0; z-index: 20; display: flex; gap: 4px; overflow-x: auto;
+  background: var(--surface); border-bottom: 1px solid var(--border); padding: 6px 8px;
+  scrollbar-width: thin;
+}
+.tab {
+  flex: 0 0 auto; min-height: 44px; padding: 8px 14px; border: 2px solid transparent; border-radius: 10px;
+  background: transparent; color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+}
+.tab[aria-selected="true"] { background: var(--surface-2); border-color: var(--primary); color: var(--primary); }
+.tab .badge { display: inline-block; margin-left: 6px; min-width: 1.6em; padding: 0 6px; border-radius: 99px; background: var(--primary); color: #fff; font-size: .8rem; text-align: center; }
+
+main { max-width: 1200px; margin: 0 auto; padding: 12px 16px 80px; }
+main:focus { outline: none; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; margin: 0 0 14px; box-shadow: var(--shadow);
+}
+.card.danger { border-color: var(--danger); }
+.card-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.card-head h2 { margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: .88rem; }
+.notice { background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.notice ul { margin: 4px 0 0; padding-left: 20px; }
+.error-text { color: var(--danger); font-weight: 600; }
+.ok-text { color: var(--ok); font-weight: 600; }
+
+/* Formulaires */
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field > span, .field > label { font-weight: 600; font-size: .92rem; }
+.field small { color: var(--muted); }
+input[type="text"], input[type="number"], input[type="date"], select, textarea {
+  font: inherit; color: var(--text); background: var(--surface); min-height: 44px;
+  border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; width: 100%;
+}
+textarea { min-height: 220px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; }
+input:disabled, select:disabled, textarea:disabled { opacity: .65; }
+.check { display: flex; gap: 10px; align-items: flex-start; min-height: 44px; padding: 6px 0; }
+.check input { width: 22px; height: 22px; margin-top: 2px; flex: 0 0 auto; }
+.inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.stepper { display: flex; gap: 6px; align-items: center; }
+.stepper input { text-align: center; max-width: 90px; }
+
+/* Boutons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 44px; padding: 8px 16px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+  text-decoration: none; touch-action: manipulation;
+}
+.btn:hover { filter: brightness(.97); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+.btn-danger { color: var(--danger); border-color: var(--danger); }
+.btn-big { min-height: 56px; font-size: 1.1rem; padding: 10px 22px; }
+.btn-small { min-height: 40px; padding: 6px 12px; font-size: .92rem; }
+.btn-icon { min-width: 44px; padding: 6px; font-size: 1.2rem; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+
+/* Statistiques du récapitulatif */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 8px 0; }
+.kpi { background: var(--surface-2); border-radius: 10px; padding: 10px; }
+.kpi b { display: block; font-size: 1.5rem; }
+.kpi span { color: var(--muted); font-size: .85rem; }
+
+/* Cartes de match */
+.match-list { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+.match-card {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; width: 100%;
+  text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+  border-left: 6px solid var(--muted); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; min-height: 64px;
+}
+.match-card.st-ready { border-left-color: var(--primary); }
+.match-card.st-in_progress { border-left-color: var(--lower); background: var(--surface-2); }
+.match-card.st-completed { border-left-color: var(--ok); }
+.match-card.st-bye { cursor: default; border-left-style: dashed; }
+.court-badge { min-width: 46px; text-align: center; font-weight: 700; border-radius: 8px; padding: 6px 4px; background: var(--surface-2); border: 1px solid var(--border); font-size: .9rem; }
+.court-badge.on { background: var(--lower); color: #fff; border-color: var(--lower); }
+.players { display: flex; flex-direction: column; min-width: 0; }
+.players span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.players .win { font-weight: 700; }
+.players .win::after { content: " ✓"; }
+.score { font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; white-space: nowrap; }
+.state-label { display: block; font-size: .78rem; font-weight: 600; color: var(--muted); }
+
+/* Tableaux de données */
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; background: var(--surface); }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+th { background: var(--surface-2); position: sticky; top: 0; font-weight: 700; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.withdrawn td { color: var(--muted); text-decoration: line-through; }
+tr.div-sep td { border-top: 3px solid var(--primary); }
+
+/* Partitions */
+.partition { display: flex; gap: 12px; align-items: flex-start; border: 2px solid var(--border); border-radius: 12px; padding: 12px; margin: 8px 0; cursor: pointer; }
+.partition:has(input:checked) { border-color: var(--primary); background: var(--surface-2); }
+.partition > span { flex: 1; min-width: 0; }
+.partition input[type="radio"] { width: 22px; height: 22px; margin-top: 3px; flex: 0 0 auto; }
+.div-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.chip { display: inline-block; padding: 3px 10px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); font-size: .85rem; font-weight: 600; }
+.chip.win { border-color: var(--upper); color: var(--upper); }
+.chip.loss { border-color: var(--lower); color: var(--lower); border-style: dashed; }
+.preview-cols { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.preview-cols ol { margin: 4px 0; padding-left: 28px; }
+
+/* Arbre de classement intégral */
+.division-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.division-tabs .btn[aria-pressed="true"] { background: var(--primary); color: #fff; border-color: var(--primary); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: .9rem; margin: 6px 0; }
+.legend .sw { display: inline-block; width: 26px; height: 0; border-top: 4px solid; vertical-align: middle; margin-right: 4px; }
+.legend .sw.w { border-color: var(--upper); }
+.legend .sw.l { border-color: var(--lower); border-top-style: dashed; }
+.legend .box { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; border: 3px solid; }
+.bracket-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.bracket-scroll {
+  overflow: auto; -webkit-overflow-scrolling: touch; max-height: 75vh; border: 1px solid var(--border);
+  border-radius: 12px; background: #f8fafc; touch-action: pan-x pan-y;
+}
+.bracket-scroll:fullscreen { max-height: none; height: 100vh; background: #f8fafc; }
+.bracket-scroll svg { display: block; }
+.bracket-scroll .node { cursor: pointer; }
+.bracket-scroll .node:focus { outline: none; }
+.bracket-scroll .node:focus rect.frame, .bracket-scroll .node:hover rect.frame { stroke-width: 4; }
+.fullscreen-target:fullscreen { background: var(--bg); overflow: auto; padding: 16px; }
+
+/* Vue Terrains (gymnase) */
+.courts-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.court-card { background: var(--surface); border: 2px solid var(--border); border-radius: 14px; padding: 14px; min-height: 160px; display: flex; flex-direction: column; gap: 8px; }
+.court-card.busy { border-color: var(--lower); }
+.court-card h3 { font-size: 1.5rem; margin: 0; }
+.court-card .vs { font-size: 1.35rem; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+.court-card .vs .sep { display: block; font-size: .9rem; color: var(--muted); font-weight: 600; }
+.court-card .free { font-size: 1.2rem; color: var(--muted); }
+.court-card .btn { margin-top: auto; }
+.queue { counter-reset: q; list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.queue li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; background: var(--surface-2); border-radius: 10px; padding: 8px 10px; }
+.queue li .who { font-weight: 700; font-size: 1.05rem; }
+#view.gym .court-card .vs { font-size: 1.8rem; }
+#view.gym .court-card h3 { font-size: 2rem; }
+
+/* Dialogue de saisie */
+dialog { border: 0; border-radius: 16px; padding: 0; width: min(560px, calc(100vw - 16px)); max-height: calc(100vh - 16px); color: var(--text); background: var(--surface); box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+dialog::backdrop { background: rgba(10, 15, 25, .55); }
+.dlg { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.dlg-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.dlg-head h2 { margin: 0; font-size: 1.15rem; }
+.score-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; background: var(--surface-2); padding: 10px; border-radius: 12px; }
+.score-row label { font-weight: 700; font-size: 1.1rem; overflow-wrap: anywhere; }
+.score-input { display: flex; gap: 6px; align-items: center; }
+.score-input input { width: 76px; text-align: center; font-size: 1.5rem; font-weight: 700; min-height: 52px; padding: 4px; }
+.score-input .btn { min-width: 48px; min-height: 52px; font-size: 1.4rem; }
+details > summary { cursor: pointer; font-weight: 600; min-height: 40px; display: flex; align-items: center; }
+
+/* Bandeau, toast */
+.banner[hidden] { display: none; }
+.banner { background: var(--warn-bg); border-bottom: 1px solid var(--warn-border); padding: 10px 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.toast { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); max-width: calc(100vw - 32px); background: #111827; color: #fff; padding: 10px 16px; border-radius: 10px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 50; }
+.toast.show { opacity: 1; }
+.toast.error { background: var(--danger); }
+
+@media (max-width: 600px) {
+  main { padding: 10px 10px 80px; }
+  .card { padding: 12px; }
+  .match-list { grid-template-columns: 1fr; }
+  .brand-name { display: none; }
+  .topbar { padding: 8px 10px; flex-wrap: nowrap; }
+  .tournament-switch { flex-wrap: nowrap; gap: 4px; min-width: 0; }
+  .tournament-switch select { max-width: 40vw; min-height: 38px; font-size: .9rem; }
+  .topbar .btn-small { padding: 4px 8px; font-size: .85rem; min-height: 38px; }
+}
+
+/* Impression */
+@media print {
+  @page { margin: 12mm; }
+  body { background: #fff; color: #000; font-size: 11pt; }
+  .topbar, .tabs, .banner, .toast, .btn, .bracket-tools, .division-tabs, .no-print, dialog { display: none !important; }
+  main { max-width: none; padding: 0; }
+  .card { box-shadow: none; border: 1px solid #999; break-inside: avoid; }
+  .bracket-scroll { max-height: none; overflow: visible; border: 0; }
+  .bracket-scroll svg { max-width: 100%; height: auto; }
+  .table-wrap { overflow: visible; border: 0; }
+  th { position: static; }
+  .match-card { break-inside: avoid; }
+  .print-only { display: block !important; }
+}
+.print-only { display: none; }
+
+</style>
+</head>
+<body>
+<a class="skip-link" href="#view">Aller au contenu</a>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-icon" aria-hidden="true">🏸</span>
+    <span class="brand-name">Tournoi EPS</span>
+  </div>
+  <div class="tournament-switch">
+    <label for="tournamentSelect" class="sr-only">Tournoi affiché</label>
+    <select id="tournamentSelect"></select>
+    <button type="button" class="btn btn-small" data-action="new-tournament">Nouveau</button>
+    <label class="btn btn-small" for="importInput">Importer</label>
+    <input type="file" id="importInput" accept=".json,application/json" hidden>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="Sections du tournoi" id="tabs"></nav>
+
+<div id="banner" class="banner" hidden></div>
+
+<main id="view" tabindex="-1"></main>
+
+<div id="live" class="toast" role="status" aria-live="polite"></div>
+
+<dialog id="matchDialog" aria-labelledby="matchDialogTitle"></dialog>
+
+<noscript><p class="card">Cette application nécessite JavaScript.</p></noscript>
+
+<script>
+/*
+ * Tournoi EPS — moteur de tournoi (logique pure, sans dépendance, sans DOM).
+ *
+ * Utilisable :
+ *   - dans le navigateur via <script src="engine.js"> (expose window.TournoiEngine),
+ *     ce qui fonctionne aussi en ouverture locale (file://) ;
+ *   - dans Node (tests) via require('./engine.js').
+ *
+ * Principe général : l'état du tournoi est un objet JSON sérialisable. Les fonctions
+ * de modification ne mutent jamais l'état reçu : elles travaillent sur une copie et
+ * renvoient { ok, state, ... }. Les joueurs des matchs de tableau sont TOUJOURS
+ * recalculés à partir des résultats des matchs sources (fonction propagate) : il n'y a
+ * qu'une seule source de vérité, les résultats saisis.
+ *
+ * Les choix algorithmiques importants sont expliqués en commentaire et dans README.md.
+ */
+(function (root, factory) {
+  'use strict';
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.TournoiEngine = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const SCHEMA_VERSION = 1;
+  const SPORTS = ['Badminton', 'Tennis de table', 'Pickleball', 'Tennis', 'Padel'];
+  const MAX_SCORE = 999;
+  const POOL_SIZES = [3, 5, 6]; // tailles autorisées pour une division en poule
+  const BRACKET_SIZES = [2, 4, 8, 16, 32, 64];
+
+  /* ------------------------------------------------------------------ *
+   * Utilitaires
+   * ------------------------------------------------------------------ */
+  function clone(o) {
+    return JSON.parse(JSON.stringify(o));
+  }
+
+  // Hachage de chaîne (cyrb53 simplifié, 32 bits) — déterministe.
+  function hashString(str) {
+    let h1 = 0xdeadbeef ^ str.length;
+    let h2 = 0x41c6ce57 ^ str.length;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    return h1 >>> 0;
+  }
+
+  // Générateur pseudo-aléatoire reproductible (mulberry32).
+  function mulberry32(a) {
+    return function () {
+      a |= 0;
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function rngFor(seed, salt) {
+    return mulberry32(hashString(String(seed) + '|' + salt));
+  }
+
+  function shuffle(arr, rng) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  function randomSeed() {
+    const words = ['raquette', 'volant', 'filet', 'smash', 'service', 'revers', 'lob', 'amorti', 'drive', 'ace'];
+    const w = words[Math.floor(Math.random() * words.length)];
+    return w + '-' + Math.floor(1000 + Math.random() * 9000);
+  }
+
+  function isPowerOfTwo(n) {
+    return n >= 1 && (n & (n - 1)) === 0;
+  }
+
+  function log2int(n) {
+    return Math.round(Math.log2(n));
+  }
+
+  function normalizeName(s) {
+    return String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  }
+
+  // Clé de comparaison pour les doublons : insensible à la casse, aux accents et aux espaces.
+  function nameKey(s) {
+    return normalizeName(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  }
+
+  function divisionLetter(i) {
+    let s = '';
+    i += 1;
+    while (i > 0) {
+      const r = (i - 1) % 26;
+      s = String.fromCharCode(65 + r) + s;
+      i = Math.floor((i - 1) / 26);
+    }
+    return s;
+  }
+
+  function nextId(state, kind, prefix) {
+    state.counters[kind] = (state.counters[kind] || 0) + 1;
+    return prefix + state.counters[kind];
+  }
+
+  function playerMap(state) {
+    const m = new Map();
+    state.players.forEach(p => m.set(p.id, p));
+    return m;
+  }
+
+  function matchMap(state) {
+    const m = new Map();
+    state.matches.forEach(x => m.set(x.id, x));
+    return m;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Création du tournoi et gestion des joueurs
+   * ------------------------------------------------------------------ */
+  function defaultSettings() {
+    return {
+      courts: 4,
+      swissRounds: 3,
+      matchFormat: 'temps',   // 'temps' (durée limitée) ou 'score' (score cible)
+      matchMinutes: 8,
+      targetScore: 21,
+      allowDrawsSwiss: false, // match nul autorisé au brassage (jamais en tableau)
+      byePoints: 1,           // points de match accordés pour une exemption (0 ou 1)
+      useSeeds: false,        // têtes de série = ordre de la liste des joueurs
+      autoAssign: true        // affectation automatique des terrains libres
+    };
+  }
+
+  function createTournament(opts) {
+    opts = opts || {};
+    const now = opts.now || Date.now();
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      tournament: {
+        id: opts.id || ('T' + now.toString(36) + Math.floor(Math.random() * 1e6).toString(36)),
+        name: normalizeName(opts.name) || 'Tournoi EPS',
+        sport: opts.sport || SPORTS[0],
+        date: opts.date || new Date(now).toISOString().slice(0, 10),
+        seed: opts.seed || randomSeed(),
+        phase: 'setup', // setup | swiss | finals | done
+        settings: Object.assign(defaultSettings(), opts.settings || {}),
+        createdAt: now,
+        updatedAt: now
+      },
+      counters: { player: 0, match: 0, round: 0 },
+      players: [],
+      rounds: [],
+      divisions: [],
+      matches: []
+    };
+  }
+
+  /**
+   * Analyse une liste de noms (une ligne par joueur). Les lignes vides sont ignorées,
+   * les espaces superflus supprimés. Les doublons (insensibles casse/accents) sont signalés.
+   */
+  function analyzeNames(input) {
+    const lines = Array.isArray(input) ? input : String(input || '').split(/\r?\n/);
+    const names = [];
+    let empty = 0;
+    const seen = new Map();
+    const duplicates = [];
+    lines.forEach(raw => {
+      const n = normalizeName(raw);
+      if (!n) { empty++; return; }
+      const k = nameKey(n);
+      if (seen.has(k)) {
+        if (!duplicates.includes(n)) duplicates.push(n);
+      } else {
+        seen.set(k, n);
+      }
+      names.push(n);
+    });
+    const errors = [];
+    if (duplicates.length) errors.push('Noms en double : ' + duplicates.join(', ') + '. Ajoutez une initiale pour les distinguer.');
+    if (names.length < 2) errors.push('Il faut au moins 2 joueurs.');
+    names.forEach(n => { if (n.length > 60) errors.push('Nom trop long (60 caractères max) : ' + n.slice(0, 20) + '…'); });
+    return { names, empty, duplicates, errors, ok: errors.length === 0 };
+  }
+
+  /**
+   * Lecture simple d'un CSV : prend la première colonne de chaque ligne (séparateur ; , ou
+   * tabulation), ignore une ligne d'en-tête « nom / joueur / élève ».
+   */
+  function parseCSVNames(text) {
+    const lines = String(text || '').replace(/^﻿/, '').split(/\r?\n/);
+    const out = [];
+    lines.forEach((line, i) => {
+      if (!line.trim()) return;
+      const sep = line.includes(';') ? ';' : (line.includes('\t') ? '\t' : ',');
+      let cell = line.split(sep)[0].trim().replace(/^"(.*)"$/, '$1').replace(/""/g, '"');
+      if (i === 0 && /^(nom|noms|joueur|joueurs|name|eleve|élève|élèves|participant)s?$/i.test(cell)) return;
+      if (cell) out.push(cell);
+    });
+    return out;
+  }
+
+  /** Remplace la liste des joueurs (uniquement en phase de configuration). */
+  function setPlayers(state, names) {
+    if (state.tournament.phase !== 'setup') return fail('LOCKED', 'Le tournoi a commencé : la liste des joueurs est verrouillée.');
+    const a = analyzeNames(names);
+    if (a.duplicates.length) return fail('DUPLICATES', a.errors[0]);
+    const s = clone(state);
+    s.counters.player = 0;
+    s.players = a.names.map((name, i) => ({ id: nextId(s, 'player', 'P'), name, initialSeed: i + 1, withdrawn: false }));
+    touch(s);
+    return ok(s);
+  }
+
+  function updateSettings(state, patch) {
+    const s = clone(state);
+    const st = s.tournament.settings;
+    const phase = s.tournament.phase;
+    const errors = [];
+    Object.keys(patch).forEach(key => {
+      const v = patch[key];
+      switch (key) {
+        case 'courts': {
+          const n = Math.floor(Number(v));
+          if (!(n >= 1 && n <= 40)) { errors.push('Nombre de terrains entre 1 et 40.'); break; }
+          const used = s.matches.filter(m => m.courtId && !m.result).map(m => courtNumber(m.courtId));
+          if (used.some(c => c > n)) { errors.push('Un match est en cours sur un terrain supprimé : terminez-le ou libérez le terrain d\'abord.'); break; }
+          st.courts = n; break;
+        }
+        case 'swissRounds': {
+          const n = Math.floor(Number(v));
+          if (!(n >= 0 && n <= 12)) { errors.push('Nombre de rondes de brassage entre 0 et 12.'); break; }
+          if (phase === 'finals' || phase === 'done') { errors.push('Les tableaux sont générés : nombre de rondes verrouillé.'); break; }
+          if (n < s.rounds.length) { errors.push('Déjà ' + s.rounds.length + ' ronde(s) générée(s) : impossible de descendre en dessous.'); break; }
+          if (phase === 'swiss' && n === 0) { errors.push('Le brassage a commencé : au moins une ronde.'); break; }
+          st.swissRounds = n; break;
+        }
+        case 'matchMinutes': {
+          const n = Math.floor(Number(v));
+          if (!(n >= 1 && n <= 120)) { errors.push('Durée de match entre 1 et 120 minutes.'); break; }
+          st.matchMinutes = n; break;
+        }
+        case 'targetScore': {
+          const n = Math.floor(Number(v));
+          if (!(n >= 1 && n <= 99)) { errors.push('Score cible entre 1 et 99.'); break; }
+          st.targetScore = n; break;
+        }
+        case 'matchFormat':
+          if (v !== 'temps' && v !== 'score') { errors.push('Format de match inconnu.'); break; }
+          st.matchFormat = v; break;
+        case 'allowDrawsSwiss':
+        case 'useSeeds':
+        case 'byePoints':
+          if (phase !== 'setup') { errors.push('Paramètre verrouillé après le début du tournoi.'); break; }
+          st[key] = key === 'byePoints' ? (Number(v) ? 1 : 0) : !!v; break;
+        case 'autoAssign':
+          st.autoAssign = !!v; break;
+        default:
+          errors.push('Paramètre inconnu : ' + key);
+      }
+    });
+    if (errors.length) return fail('INVALID_SETTING', errors.join(' '));
+    touch(s);
+    return ok(s);
+  }
+
+  function updateInfo(state, patch) {
+    const s = clone(state);
+    const t = s.tournament;
+    if ('name' in patch) t.name = normalizeName(patch.name) || 'Tournoi EPS';
+    if ('sport' in patch) t.sport = String(patch.sport || SPORTS[0]).slice(0, 40);
+    if ('date' in patch) t.date = String(patch.date || '').slice(0, 10);
+    if ('seed' in patch) {
+      if (t.phase !== 'setup') return fail('LOCKED', 'La graine du tirage est verrouillée après le début du tournoi.');
+      t.seed = normalizeName(patch.seed) || randomSeed();
+    }
+    touch(s);
+    return ok(s);
+  }
+
+  function ok(state, extra) { return Object.assign({ ok: true, state }, extra || {}); }
+  function fail(code, message, extra) { return Object.assign({ ok: false, code, error: message }, extra || {}); }
+  function touch(s) { s.tournament.updatedAt = Date.now(); }
+
+  /* ------------------------------------------------------------------ *
+   * Classement du brassage
+   * ------------------------------------------------------------------ *
+   * Points de match : victoire 1, nul 0,5, défaite 0, exemption = byePoints (1 par défaut).
+   * Une exemption n'est PAS une victoire : elle n'entre ni dans les victoires, ni dans les
+   * points marqués/encaissés, ni dans la force des adversaires.
+   * Un forfait compte comme victoire / défaite, sans points marqués/encaissés.
+   *
+   * Ordre de départage (affiché dans l'interface) :
+   *   1. points de match ;
+   *   2. différence de points MOYENNE par match avec score (les moyennes évitent de
+   *      pénaliser un joueur exempté ou arrivé en retard, qui a joué moins de matchs) ;
+   *   3. points marqués moyens par match avec score ;
+   *   4. force des adversaires (moyenne des points de match des adversaires rencontrés) ;
+   *   5. tête de série initiale (si l'option est activée) ;
+   *   6. tirage reproductible dérivé de la graine du tournoi.
+   * Limites : avec 3 rondes, les critères 2 à 4 restent peu discriminants ; la différence de
+   * points dépend du format (temps limité vs score cible).
+   */
+  const CRITERIA = [
+    { key: 'matchPoints', label: 'points de match' },
+    { key: 'avgDiff', label: 'différence moyenne' },
+    { key: 'avgFor', label: 'points marqués moyens' },
+    { key: 'oppStrength', label: 'force des adversaires' },
+    { key: 'seed', label: 'tête de série' },
+    { key: 'draw', label: 'tirage au sort (graine)' }
+  ];
+
+  function swissStandings(state) {
+    const settings = state.tournament.settings;
+    const stats = new Map();
+    state.players.forEach(p => {
+      stats.set(p.id, {
+        playerId: p.id, name: p.name, initialSeed: p.initialSeed, withdrawn: !!p.withdrawn,
+        played: 0, wins: 0, draws: 0, losses: 0, byes: 0, forfeitWins: 0, forfeitLosses: 0,
+        pointsFor: 0, pointsAgainst: 0, scored: 0, opponents: [], matchPoints: 0
+      });
+    });
+    state.matches.forEach(m => {
+      if (m.phase !== 'swiss' || !m.result) return;
+      const r = m.result;
+      if (r.type === 'exemption') {
+        const s = stats.get(m.playerAId);
+        if (s) s.byes++;
+        return;
+      }
+      const a = stats.get(m.playerAId), b = stats.get(m.playerBId);
+      if (!a || !b) return;
+      a.played++; b.played++;
+      a.opponents.push(b.playerId); b.opponents.push(a.playerId);
+      if (r.type === 'forfait') {
+        const w = stats.get(r.winnerId), l = stats.get(r.loserId);
+        w.wins++; w.forfeitWins++; l.losses++; l.forfeitLosses++;
+        return;
+      }
+      a.pointsFor += r.scoreA; a.pointsAgainst += r.scoreB;
+      b.pointsFor += r.scoreB; b.pointsAgainst += r.scoreA;
+      a.scored++; b.scored++;
+      if (r.scoreA > r.scoreB) { a.wins++; b.losses++; }
+      else if (r.scoreA < r.scoreB) { b.wins++; a.losses++; }
+      else { a.draws++; b.draws++; }
+    });
+    const list = Array.from(stats.values());
+    list.forEach(s => {
+      s.matchPoints = s.wins + 0.5 * s.draws + s.byes * (settings.byePoints || 0);
+      s.diff = s.pointsFor - s.pointsAgainst;
+      s.avgDiff = s.scored ? s.diff / s.scored : 0;
+      s.avgFor = s.scored ? s.pointsFor / s.scored : 0;
+    });
+    list.forEach(s => {
+      s.oppStrength = s.opponents.length
+        ? s.opponents.reduce((acc, id) => acc + stats.get(id).matchPoints, 0) / s.opponents.length
+        : 0;
+      s.seedValue = settings.useSeeds ? s.initialSeed : 0;
+      s.drawValue = hashString(state.tournament.seed + '#tie#' + s.playerId);
+    });
+    const cmpAt = (a, b, k) => {
+      switch (k) {
+        case 'matchPoints': return b.matchPoints - a.matchPoints;
+        case 'avgDiff': return round6(b.avgDiff - a.avgDiff);
+        case 'avgFor': return round6(b.avgFor - a.avgFor);
+        case 'oppStrength': return round6(b.oppStrength - a.oppStrength);
+        case 'seed': return a.seedValue - b.seedValue;
+        case 'draw': return a.drawValue - b.drawValue || (a.playerId < b.playerId ? -1 : 1);
+      }
+      return 0;
+    };
+    list.sort((a, b) => {
+      for (const c of CRITERIA) {
+        const d = cmpAt(a, b, c.key);
+        if (d !== 0) return d;
+      }
+      return 0;
+    });
+    list.forEach((s, i) => {
+      s.rank = i + 1;
+      s.decidedBy = null;
+      if (i > 0) {
+        const prev = list[i - 1];
+        for (const c of CRITERIA) {
+          if (cmpAt(prev, s, c.key) !== 0) { s.decidedBy = c.label; break; }
+        }
+      }
+    });
+    return list;
+  }
+
+  function round6(x) { return Math.abs(x) < 1e-9 ? 0 : x; }
+
+  /* ------------------------------------------------------------------ *
+   * Appariements du brassage (inspiré du système suisse)
+   * ------------------------------------------------------------------ *
+   * Ronde 1 :
+   *   - têtes de série : la moitié haute rencontre la moitié basse (1 contre N/2+1, …) ;
+   *   - sinon : tirage aléatoire reproductible (graine), appariement des voisins.
+   * Rondes suivantes : on cherche l'appariement parfait de COÛT MINIMAL, avec
+   *   coût(i,j) = 1000 × (nombre de rencontres déjà jouées entre i et j)
+   *             +   10 × (écart de points de match)²
+   *             +    1 × |écart de rang provisoire|
+   * La forte pénalité garantit qu'aucune paire répétée n'est choisie si une alternative
+   * existe (la recherche est exacte : séparation et évaluation, avec un budget de nœuds
+   * très large pour les effectifs scolaires ; au-delà, la meilleure solution trouvée est
+   * conservée et signalée).
+   * Exemption (effectif impair) : priorité aux joueurs qui n'en ont pas eu, puis à ceux
+   * qui ont joué le plus de matchs, puis aux moins bien classés ; parmi les meilleurs
+   * candidats, on retient celui qui permet l'appariement de coût minimal.
+   */
+  function pairKey(a, b) { return a < b ? a + '|' + b : b + '|' + a; }
+
+  function previousPairCounts(state) {
+    const counts = new Map();
+    state.matches.forEach(m => {
+      if (!m.playerAId || !m.playerBId) return;
+      const k = pairKey(m.playerAId, m.playerBId);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    });
+    return counts;
+  }
+
+  function minCostPerfectMatching(n, costFn, budget) {
+    budget = budget || 400000;
+    if (n === 0) return { pairs: [], cost: 0, optimal: true };
+    const cost = [];
+    for (let i = 0; i < n; i++) {
+      cost.push([]);
+      for (let j = 0; j < n; j++) cost[i].push(i === j ? Infinity : costFn(i, j));
+    }
+    const pref = [];
+    const minEdge = [];
+    for (let i = 0; i < n; i++) {
+      const js = [];
+      for (let j = 0; j < n; j++) if (j !== i) js.push(j);
+      js.sort((x, y) => cost[i][x] - cost[i][y] || x - y);
+      pref.push(js);
+      minEdge.push(cost[i][js[0]]);
+    }
+    const used = new Array(n).fill(false);
+    let best = Infinity, bestPairs = null, nodes = 0, aborted = false;
+    const pairs = [];
+    const lb0 = minEdge.reduce((a, b) => a + b, 0) / 2;
+    function dfs(cur, lb) {
+      if (aborted) return;
+      if (++nodes > budget) { aborted = true; return; }
+      let i = -1;
+      for (let k = 0; k < n; k++) if (!used[k]) { i = k; break; }
+      if (i < 0) {
+        if (cur < best) { best = cur; bestPairs = pairs.slice(); }
+        return;
+      }
+      used[i] = true;
+      for (const j of pref[i]) {
+        if (used[j]) continue;
+        const nlb = lb - minEdge[i] / 2 - minEdge[j] / 2;
+        const c = cur + cost[i][j];
+        if (c + nlb >= best - 1e-9) continue;
+        used[j] = true; pairs.push([i, j]);
+        dfs(c, nlb);
+        pairs.pop(); used[j] = false;
+        if (aborted && bestPairs) break;
+      }
+      used[i] = false;
+    }
+    dfs(0, lb0);
+    return { pairs: bestPairs || [], cost: best, optimal: !aborted };
+  }
+
+  function computeSwissPairings(state, roundNumber) {
+    const settings = state.tournament.settings;
+    const standings = swissStandings(state);
+    const active = standings.filter(s => !s.withdrawn);
+    const counts = previousPairCounts(state);
+    const result = { pairs: [], bye: null, optimal: true, repeats: 0 };
+    if (active.length < 2) return result;
+
+    const firstRound = !state.matches.some(m => m.phase === 'swiss' && m.result && m.result.type !== 'exemption');
+    if (roundNumber === 1 || firstRound) {
+      let order;
+      if (settings.useSeeds) {
+        order = active.slice().sort((a, b) => a.initialSeed - b.initialSeed).map(s => s.playerId);
+      } else {
+        order = shuffle(active.map(s => s.playerId).sort(), rngFor(state.tournament.seed, 'ronde-' + roundNumber));
+      }
+      if (order.length % 2 === 1) result.bye = order.pop();
+      if (settings.useSeeds) {
+        const half = order.length / 2;
+        for (let i = 0; i < half; i++) result.pairs.push([order[i], order[i + half]]);
+      } else {
+        for (let i = 0; i < order.length; i += 2) result.pairs.push([order[i], order[i + 1]]);
+      }
+      return result;
+    }
+
+    const solve = ids => {
+      const rankOf = new Map(ids.map((id, i) => [id, i]));
+      const mp = new Map(active.map(s => [s.playerId, s.matchPoints]));
+      const sol = minCostPerfectMatching(ids.length, (i, j) => {
+        const a = ids[i], b = ids[j];
+        const rep = counts.get(pairKey(a, b)) || 0;
+        const dmp = mp.get(a) - mp.get(b);
+        return 1000 * rep + 10 * dmp * dmp + Math.abs(rankOf.get(a) - rankOf.get(b));
+      });
+      return sol;
+    };
+
+    let ids = active.map(s => s.playerId);
+    if (ids.length % 2 === 1) {
+      const byeOrder = active.slice().sort((a, b) =>
+        (a.byes - b.byes) || (b.played - a.played) || (b.rank - a.rank));
+      const minByes = byeOrder[0].byes;
+      const maxPlayed = Math.max.apply(null, byeOrder.filter(s => s.byes === minByes).map(s => s.played));
+      const candidates = byeOrder.filter(s => s.byes === minByes && s.played === maxPlayed).slice(0, 4);
+      let bestSol = null, bestBye = null;
+      candidates.forEach(c => {
+        const rest = ids.filter(id => id !== c.playerId);
+        const sol = solve(rest);
+        if (!bestSol || sol.cost < bestSol.cost) { bestSol = sol; bestBye = { id: c.playerId, rest }; }
+      });
+      result.bye = bestBye.id;
+      result.optimal = bestSol.optimal;
+      result.pairs = bestSol.pairs.map(([i, j]) => [bestBye.rest[i], bestBye.rest[j]]);
+    } else {
+      const sol = solve(ids);
+      result.optimal = sol.optimal;
+      result.pairs = sol.pairs.map(([i, j]) => [ids[i], ids[j]]);
+    }
+    result.repeats = result.pairs.filter(([a, b]) => counts.has(pairKey(a, b))).length;
+    return result;
+  }
+
+  function newMatch(state, fields) {
+    return Object.assign({
+      id: nextId(state, 'match', 'M'),
+      phase: 'swiss', roundId: null, divisionId: null, courtId: null,
+      playerAId: null, playerBId: null, sourceA: null, sourceB: null,
+      result: null, status: 'pending', targetRanks: null, label: '',
+      number: 0, depth: 0, row: 0, isBye: false, invalidated: null,
+      createdAt: Date.now(), startedAt: null, completedAt: null
+    }, fields);
+  }
+
+  function startTournament(state) {
+    if (state.tournament.phase !== 'setup') return fail('ALREADY_STARTED', 'Le tournoi a déjà commencé.');
+    const a = analyzeNames(state.players.map(p => p.name));
+    if (!a.ok) return fail('INVALID_PLAYERS', a.errors.join(' '));
+    let s = clone(state);
+    if (s.tournament.settings.swissRounds === 0) {
+      s.tournament.phase = 'swiss'; // brassage vide : on passe directement au choix des divisions
+      touch(s);
+      return ok(s);
+    }
+    s.tournament.phase = 'swiss';
+    const r = generateNextSwissRound(s);
+    if (!r.ok) return r;
+    return ok(r.state);
+  }
+
+  function swissRoundsComplete(state) {
+    return state.rounds.every(r => roundMatches(state, r).every(m => !!m.result));
+  }
+
+  function roundMatches(state, round) {
+    const ids = new Set(round.matchIds);
+    return state.matches.filter(m => ids.has(m.id));
+  }
+
+  function canGenerateNextRound(state) {
+    const t = state.tournament;
+    if (t.phase !== 'swiss') return { ok: false, reason: 'Le brassage n\'est pas en cours.' };
+    if (state.rounds.length >= t.settings.swissRounds) return { ok: false, reason: 'Toutes les rondes prévues ont été générées.' };
+    if (!swissRoundsComplete(state)) return { ok: false, reason: 'La ronde en cours n\'est pas terminée.' };
+    if (state.players.filter(p => !p.withdrawn).length < 2) return { ok: false, reason: 'Moins de 2 joueurs actifs.' };
+    return { ok: true };
+  }
+
+  function generateNextSwissRound(state) {
+    const can = canGenerateNextRound(state);
+    if (!can.ok) return fail('CANNOT_GENERATE', can.reason);
+    const s = clone(state);
+    const number = s.rounds.length + 1;
+    const p = computeSwissPairings(s, number);
+    const round = { id: nextId(s, 'round', 'R'), phase: 'swiss', number, matchIds: [], optimal: p.optimal, repeats: p.repeats };
+    p.pairs.forEach(([a, b], i) => {
+      const m = newMatch(s, { phase: 'swiss', roundId: round.id, playerAId: a, playerBId: b, number: i + 1, label: 'R' + number + '-' + (i + 1), depth: number - 1, row: i });
+      s.matches.push(m);
+      round.matchIds.push(m.id);
+    });
+    if (p.bye) {
+      const m = newMatch(s, {
+        phase: 'swiss', roundId: round.id, playerAId: p.bye, isBye: true, number: p.pairs.length + 1,
+        label: 'R' + number + '-exempt', depth: number - 1, row: p.pairs.length,
+        result: { type: 'exemption', winnerId: null, loserId: null, playerAId: p.bye, playerBId: null }
+      });
+      m.completedAt = Date.now();
+      s.matches.push(m);
+      round.matchIds.push(m.id);
+    }
+    s.rounds.push(round);
+    refresh(s);
+    const out = s.tournament.settings.autoAssign ? autoAssignCourts(s).state : s;
+    touch(out);
+    return ok(out, { pairing: p });
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Divisions et tableaux de classement intégral
+   * ------------------------------------------------------------------ */
+  function divisionFormat(size) {
+    if (size >= 2 && isPowerOfTwo(size)) return 'bracket';
+    if (POOL_SIZES.includes(size)) return 'pool';
+    return null;
+  }
+
+  function matchesPerPlayer(size) {
+    return divisionFormat(size) === 'bracket' ? log2int(size) : size - 1;
+  }
+
+  function matchesInDivision(size) {
+    return divisionFormat(size) === 'bracket' ? size * log2int(size) / 2 : size * (size - 1) / 2;
+  }
+
+  function validatePartition(sizes, n) {
+    if (!Array.isArray(sizes) || !sizes.length) return { ok: false, error: 'Partition vide.' };
+    const bad = sizes.filter(x => !Number.isInteger(x) || !divisionFormat(x));
+    if (bad.length) return { ok: false, error: 'Tailles non autorisées : ' + bad.join(', ') + ' (tableau : 2, 4, 8, 16, 32, 64 ; poule : 3, 5, 6).' };
+    const sum = sizes.reduce((a, b) => a + b, 0);
+    if (sum !== n) return { ok: false, error: 'La somme des divisions (' + sum + ') doit être égale au nombre de joueurs (' + n + ').' };
+    return { ok: true };
+  }
+
+  /** Décrit une partition : formats, matchs par joueur, total, avertissements. */
+  function describePartition(sizes) {
+    const divisions = [];
+    let start = 1;
+    sizes.forEach((size, i) => {
+      divisions.push({
+        name: divisionLetter(i), size, format: divisionFormat(size),
+        rankStart: start, rankEnd: start + size - 1,
+        matchesPerPlayer: matchesPerPlayer(size), matches: matchesInDivision(size)
+      });
+      start += size;
+    });
+    const mpp = divisions.map(d => d.matchesPerPlayer);
+    const total = divisions.reduce((a, d) => a + d.matches, 0);
+    const warnings = [];
+    if (divisions.length > 1) warnings.push('Les frontières de divisions sont fixées par le brassage : un joueur d\'une division ne peut pas finir devant un joueur d\'une division supérieure, même s\'il gagne tous ses matchs.');
+    if (Math.max.apply(null, mpp) !== Math.min.apply(null, mpp)) warnings.push('Nombre de matchs inégal selon la division (de ' + Math.min.apply(null, mpp) + ' à ' + Math.max.apply(null, mpp) + ' matchs par joueur).');
+    if (divisions.some(d => d.format === 'pool')) warnings.push('Une ou plusieurs divisions se jouent en poule (tous contre tous) : ce n\'est plus un tableau intégral pur ; le rang y est obtenu par victoires puis départages.');
+    if (divisions.some(d => d.size === 2)) warnings.push('Une division de 2 joueurs ne comporte qu\'un seul match.');
+    return { sizes: sizes.slice(), divisions, total, matchesPerPlayer: mpp, warnings, pure: divisions.every(d => d.format === 'bracket') };
+  }
+
+  /**
+   * Propose des partitions de N joueurs en divisions, classées par un score heuristique
+   * (plus petit = meilleur) :
+   *   5 × (écart de matchs par joueur entre divisions) + 1,5 × (divisions − 1)
+   *   + Σ poules (3 + 2 × (taille − 3)) + 25 × (divisions de 2)
+   *   + 4 × max(0, 3 − matchs moyens) + 3 × max(0, matchs moyens − 4) si une poule existe
+   * (un tableau unique de 2^k joueurs reste ainsi recommandé : pas de frontière de division).
+   * L'enseignant choisit ; la première proposition est seulement « recommandée ».
+   */
+  function proposePartitions(n, limit) {
+    limit = limit || 5;
+    if (n < 2) return [];
+    const sizesAllowed = BRACKET_SIZES.concat(POOL_SIZES).filter(x => x <= n).sort((a, b) => b - a);
+    const maxDiv = Math.min(12, Math.ceil(n / 3) + 1);
+    const found = [];
+    (function rec(remaining, maxSize, acc) {
+      if (found.length > 5000) return;
+      if (remaining === 0) { found.push(acc.slice()); return; }
+      if (acc.length >= maxDiv) return;
+      for (const sz of sizesAllowed) {
+        if (sz > maxSize || sz > remaining) continue;
+        acc.push(sz); rec(remaining - sz, sz, acc); acc.pop();
+      }
+    })(n, Infinity, []);
+    const scored = found.map(sizes => {
+      const d = describePartition(sizes);
+      const mpp = d.matchesPerPlayer;
+      const avg = sizes.reduce((acc, sz, i) => acc + sz * mpp[i], 0) / n;
+      const poolCost = d.divisions.filter(x => x.format === 'pool').reduce((acc, x) => acc + 3 + 2 * (x.size - 3), 0);
+      const twos = sizes.filter(x => x === 2).length;
+      const spread = Math.max.apply(null, mpp) - Math.min.apply(null, mpp);
+      const score = 5 * spread + 1.5 * (sizes.length - 1) + poolCost + 25 * twos + 4 * Math.max(0, 3 - avg) + (poolCost ? 3 * Math.max(0, avg - 4) : 0);
+      return Object.assign(d, { score: Math.round(score * 100) / 100, avgMatches: Math.round(avg * 100) / 100 });
+    });
+    scored.sort((a, b) => a.score - b.score || b.sizes[0] - a.sizes[0]);
+    const out = scored.slice(0, limit);
+    if (out.length) out[0].recommended = true;
+    return out;
+  }
+
+  // Ordre standard des têtes de série dans un tableau de taille n (1 et 2 ne se croisent qu'en finale).
+  function seedOrder(n) {
+    let order = [1, 2];
+    while (order.length < n) {
+      const m = order.length * 2;
+      const next = [];
+      order.forEach(s => { next.push(s); next.push(m + 1 - s); });
+      order = next;
+    }
+    return order.slice(0, n);
+  }
+
+  /**
+   * Construit le tableau intégral d'une division de taille 2^k.
+   * Récurrence : un groupe de m joueurs jouant pour les places [a, a+m-1] dispute m/2 matchs ;
+   * les vainqueurs forment le groupe [a, a+m/2-1], les perdants le groupe [a+m/2, a+m-1].
+   * Quand m = 2, le match attribue directement les places a et a+1.
+   * Total : (n/2) × log2(n) matchs ; chaque joueur en joue log2(n).
+   * Disposition graphique : colonne = tour (depth), ligne = rang du match dans le tour ; les
+   * vainqueurs d'un groupe sont placés au-dessus des perdants (branche haute / basse).
+   */
+  function buildBracket(state, division, seededIds) {
+    const n = seededIds.length;
+    const order = seedOrder(n);
+    const slots = order.map(seed => ({ player: seededIds[seed - 1] }));
+    let number = 0;
+    const codes = { 2: 'F', 4: 'D', 8: 'Q', 16: 'H', 32: 'S', 64: 'T' };
+    const created = [];
+    function rec(groupSlots, placeStart, depth, rowStart, branch) {
+      const m = groupSlots.length;
+      const ms = [];
+      for (let i = 0; i < m / 2; i++) {
+        const a = groupSlots[2 * i], b = groupSlots[2 * i + 1];
+        number++;
+        const isFinal = m === 2;
+        const label = depth === 0 ? (codes[n] || 'R') + (i + 1)
+          : (isFinal ? 'Places ' + placeStart + '-' + (placeStart + 1) : 'Places ' + placeStart + '-' + (placeStart + m - 1));
+        const match = newMatch(state, {
+          phase: 'final', divisionId: division.id, number, label,
+          depth, row: rowStart + i, branch: depth === 0 ? 'initial' : branch,
+          placementFinal: isFinal,
+          playerAId: a.player || null, playerBId: b.player || null,
+          sourceA: a.match ? { matchId: a.match, take: a.take } : null,
+          sourceB: b.match ? { matchId: b.match, take: b.take } : null,
+          targetRanks: [placeStart, placeStart + m - 1]
+        });
+        state.matches.push(match);
+        created.push(match);
+        ms.push(match);
+      }
+      if (m === 2) return;
+      const half = m / 2;
+      // Branche haute (vainqueurs) puis branche basse (perdants) ; la couleur suit la moitié
+      // de la division dans laquelle se trouvent les places en jeu.
+      const mid = division.globalRankStart + division.playerIds.length / 2;
+      const upperBranch = placeStart < mid ? 'upper' : 'lower';
+      const lowerBranch = placeStart + half < mid ? 'upper' : 'lower';
+      rec(ms.map(x => ({ match: x.id, take: 'winner' })), placeStart, depth + 1, rowStart, upperBranch);
+      rec(ms.map(x => ({ match: x.id, take: 'loser' })), placeStart + half, depth + 1, rowStart + half / 2, lowerBranch);
+    }
+    rec(slots, division.globalRankStart, 0, 0, 'initial');
+    return created;
+  }
+
+  // Poule (tous contre tous) — méthode du cercle pour répartir les matchs en tours.
+  function buildPool(state, division, seededIds) {
+    const ids = seededIds.slice();
+    if (ids.length % 2 === 1) ids.push(null);
+    const n = ids.length;
+    const rounds = n - 1;
+    let number = 0;
+    const created = [];
+    let arr = ids.slice();
+    for (let r = 0; r < rounds; r++) {
+      let row = 0;
+      for (let i = 0; i < n / 2; i++) {
+        const a = arr[i], b = arr[n - 1 - i];
+        if (a && b) {
+          number++;
+          const m = newMatch(state, {
+            phase: 'final', divisionId: division.id, number, label: 'Poule ' + division.name + ' — tour ' + (r + 1),
+            depth: r, row: row++, branch: 'pool', playerAId: a, playerBId: b,
+            targetRanks: [division.globalRankStart, division.globalRankStart + division.playerIds.length - 1]
+          });
+          state.matches.push(m);
+          created.push(m);
+        }
+      }
+      arr = [arr[0]].concat([arr[n - 1]], arr.slice(1, n - 1));
+    }
+    return created;
+  }
+
+  /** Ordre des joueurs pour former les divisions : classement du brassage (forfaits généraux en dernier). */
+  function seedingOrder(state) {
+    let order;
+    if (state.rounds.length > 0) {
+      order = swissStandings(state).map(s => s.playerId);
+    } else if (state.tournament.settings.useSeeds) {
+      order = state.players.slice().sort((a, b) => a.initialSeed - b.initialSeed).map(p => p.id);
+    } else {
+      order = shuffle(state.players.map(p => p.id).sort(), rngFor(state.tournament.seed, 'divisions'));
+    }
+    const pm = playerMap(state);
+    return order.filter(id => !pm.get(id).withdrawn).concat(order.filter(id => pm.get(id).withdrawn));
+  }
+
+  function canFreezeDivisions(state) {
+    if (state.tournament.phase !== 'swiss') return { ok: false, reason: 'Les divisions ne peuvent être formées qu\'à la fin du brassage.' };
+    if (state.rounds.length < state.tournament.settings.swissRounds) return { ok: false, reason: 'Toutes les rondes de brassage n\'ont pas été jouées.' };
+    if (!swissRoundsComplete(state)) return { ok: false, reason: 'La dernière ronde n\'est pas terminée.' };
+    return { ok: true };
+  }
+
+  /** Fige les têtes de série et génère les tableaux. L'interface doit avoir demandé confirmation. */
+  function freezeDivisions(state, sizes) {
+    const can = canFreezeDivisions(state);
+    if (!can.ok) return fail('CANNOT_FREEZE', can.reason);
+    const v = validatePartition(sizes, state.players.length);
+    if (!v.ok) return fail('INVALID_PARTITION', v.error);
+    const s = clone(state);
+    const order = seedingOrder(s);
+    let start = 1, offset = 0;
+    s.divisions = [];
+    sizes.forEach((size, i) => {
+      const ids = order.slice(offset, offset + size);
+      const div = { id: 'D' + divisionLetter(i), name: divisionLetter(i), playerIds: ids, globalRankStart: start, format: divisionFormat(size), size };
+      s.divisions.push(div);
+      if (div.format === 'bracket') buildBracket(s, div, ids); else buildPool(s, div, ids);
+      start += size; offset += size;
+    });
+    s.tournament.phase = 'finals';
+    s.tournament.frozenAt = Date.now();
+    refresh(s);
+    const out = s.tournament.settings.autoAssign ? autoAssignCourts(s).state : s;
+    touch(out);
+    return ok(out);
+  }
+
+  /** Supprime divisions et matchs de tableau pour revenir au brassage (confirmation côté interface). */
+  function reopenSwiss(state) {
+    if (state.tournament.phase !== 'finals' && state.tournament.phase !== 'done') return fail('NOT_IN_FINALS', 'Les tableaux ne sont pas générés.');
+    const s = clone(state);
+    s.matches = s.matches.filter(m => m.phase !== 'final');
+    s.divisions = [];
+    s.tournament.phase = 'swiss';
+    refresh(s);
+    touch(s);
+    return ok(s);
+  }
+
+  /** Remet le tournoi en configuration en conservant joueurs et paramètres. */
+  function resetMatches(state) {
+    const s = clone(state);
+    s.matches = []; s.rounds = []; s.divisions = [];
+    s.players.forEach(p => { p.withdrawn = false; });
+    s.tournament.phase = 'setup';
+    delete s.tournament.frozenAt;
+    touch(s);
+    return ok(s);
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Propagation des résultats, états, invalidations
+   * ------------------------------------------------------------------ */
+  function resolveSource(src, mm) {
+    if (!src) return undefined;
+    const m = mm.get(src.matchId);
+    if (!m || !m.result) return null;
+    return src.take === 'winner' ? m.result.winnerId : m.result.loserId;
+  }
+
+  function computeStatus(m) {
+    if (m.result) return 'completed';
+    if (m.courtId) return 'in_progress';
+    if (m.playerAId && m.playerBId) return 'ready';
+    return 'pending';
+  }
+
+  /**
+   * Recalcule les joueurs de chaque match de tableau à partir des sources (ordre de création =
+   * ordre topologique), invalide les résultats devenus incohérents, applique les forfaits
+   * automatiques (joueur retiré) et met à jour les états. Renvoie la liste des matchs invalidés.
+   */
+  function refresh(s) {
+    const mm = matchMap(s);
+    const pm = playerMap(s);
+    const invalidated = [];
+    s.matches.forEach(m => {
+      if (m.phase === 'final') {
+        if (m.sourceA) m.playerAId = resolveSource(m.sourceA, mm);
+        if (m.sourceB) m.playerBId = resolveSource(m.sourceB, mm);
+        if (m.result && m.result.type !== 'exemption' && (m.result.playerAId !== m.playerAId || m.result.playerBId !== m.playerBId)) {
+          m.invalidated = { previous: m.result, at: Date.now() };
+          invalidated.push(m.id);
+          m.result = null; m.completedAt = null;
+        }
+        if ((!m.playerAId || !m.playerBId) && m.courtId) { m.courtId = null; m.startedAt = null; }
+      }
+      // Forfait automatique : un joueur retiré perd ses matchs non joués (tableaux et ronde en cours).
+      if (!m.result && m.playerAId && m.playerBId) {
+        const wa = pm.get(m.playerAId).withdrawn, wb = pm.get(m.playerBId).withdrawn;
+        if (wa || wb) {
+          // Si les deux sont retirés (double forfait), A est déclaré vainqueur pour que le tableau avance.
+          const loser = wa && !wb ? m.playerAId : m.playerBId;
+          const winner = loser === m.playerAId ? m.playerBId : m.playerAId;
+          m.result = makeResult(m, { type: 'forfait', winnerId: winner, loserId: loser, auto: true, double: wa && wb });
+          m.courtId = null; m.completedAt = Date.now();
+        }
+      }
+      m.status = computeStatus(m);
+    });
+    s.rounds.forEach(r => {
+      r.status = roundMatches(s, r).every(m => !!m.result) ? 'completed' : 'in_progress';
+    });
+    if (s.tournament.phase === 'finals' || s.tournament.phase === 'done') {
+      const finals = s.matches.filter(m => m.phase === 'final');
+      s.tournament.phase = finals.length && finals.every(m => m.result) ? 'done' : 'finals';
+    }
+    return invalidated;
+  }
+
+  function makeResult(m, r) {
+    return Object.assign({ playerAId: m.playerAId, playerBId: m.playerBId }, r);
+  }
+
+  /** Validation explicite d'un score selon la phase et les règles. */
+  function validateScore(state, match, scoreA, scoreB) {
+    const a = Number(scoreA), b = Number(scoreB);
+    if (scoreA === '' || scoreB === '' || scoreA == null || scoreB == null) return 'Saisissez les deux scores.';
+    if (!Number.isInteger(a) || !Number.isInteger(b)) return 'Les scores doivent être des nombres entiers.';
+    if (a < 0 || b < 0) return 'Les scores ne peuvent pas être négatifs.';
+    if (a > MAX_SCORE || b > MAX_SCORE) return 'Score trop élevé (maximum ' + MAX_SCORE + ').';
+    if (a === b) {
+      if (match.phase === 'final') return 'Égalité interdite en tableau : jouez un point décisif et saisissez le score final.';
+      if (!state.tournament.settings.allowDrawsSwiss) return 'Match nul non autorisé (paramètre) : jouez un point décisif.';
+    }
+    return null;
+  }
+
+  function findMatch(state, id) {
+    return state.matches.find(m => m.id === id);
+  }
+
+  /**
+   * Évalue les conséquences d'une modification (saisie, correction ou effacement) sur un match.
+   * Renvoie { blocked, reason, invalidates[], regenerateRoundId, laterRoundsPlayed }.
+   */
+  function analyzeImpact(state, matchId, apply) {
+    const m = findMatch(state, matchId);
+    const impact = { blocked: false, reason: null, invalidates: [], regenerateRoundId: null, laterRoundsPlayed: false, needsConfirm: false };
+    if (m.phase === 'swiss') {
+      if (state.tournament.phase === 'finals' || state.tournament.phase === 'done') {
+        impact.blocked = true;
+        impact.reason = 'Les têtes de série sont figées : pour corriger un match du brassage, rouvrez d\'abord le brassage (les tableaux seront supprimés).';
+        return impact;
+      }
+      const round = state.rounds.find(r => r.id === m.roundId);
+      const later = state.rounds.filter(r => r.number > round.number);
+      later.forEach(r => {
+        const ms = roundMatches(state, r).filter(x => !x.isBye);
+        if (ms.some(x => x.result)) impact.laterRoundsPlayed = true;
+        else impact.regenerateRoundId = r.id;
+      });
+      impact.needsConfirm = impact.laterRoundsPlayed || !!impact.regenerateRoundId;
+      return impact;
+    }
+    // Tableau : simulation sur une copie, puis repérage des résultats aval invalidés.
+    const s = clone(state);
+    apply(s, findMatch(s, matchId));
+    impact.invalidates = refresh(s);
+    impact.needsConfirm = impact.invalidates.length > 0;
+    return impact;
+  }
+
+  function describeImpact(state, impact) {
+    const lines = [];
+    if (impact.regenerateRoundId) {
+      const r = state.rounds.find(x => x.id === impact.regenerateRoundId);
+      lines.push('La ronde ' + r.number + ' (pas encore jouée) sera supprimée puis régénérée avec le classement corrigé.');
+    }
+    if (impact.laterRoundsPlayed) lines.push('Des rondes suivantes ont déjà été jouées : elles sont conservées, mais leurs appariements avaient été calculés avec l\'ancien classement.');
+    if (impact.invalidates.length) {
+      const mm = matchMap(state);
+      lines.push('Résultats aval invalidés et effacés : ' + impact.invalidates.map(id => matchName(state, mm.get(id))).join(', ') + '.');
+    }
+    return lines.join('\n');
+  }
+
+  function matchName(state, m) {
+    if (!m) return '?';
+    if (m.phase === 'swiss') return 'Ronde ' + ((state.rounds.find(r => r.id === m.roundId) || {}).number || '?') + ' match ' + m.number;
+    const d = state.divisions.find(x => x.id === m.divisionId);
+    return (d ? d.name : '') + 'M' + m.number + ' (' + m.label + ')';
+  }
+
+  function applyChange(state, matchId, mutate, opts) {
+    opts = opts || {};
+    const m0 = findMatch(state, matchId);
+    if (!m0) return fail('NOT_FOUND', 'Match introuvable.');
+    const impact = analyzeImpact(state, matchId, mutate);
+    if (impact.blocked) return fail('LOCKED_FINALS', impact.reason, { impact });
+    if (impact.needsConfirm && !opts.confirm) {
+      return fail('NEEDS_CONFIRM', describeImpact(state, impact), { needsConfirm: true, impact });
+    }
+    let s = clone(state);
+    const m = findMatch(s, matchId);
+    mutate(s, m);
+    if (impact.regenerateRoundId) {
+      const r = s.rounds.find(x => x.id === impact.regenerateRoundId);
+      const ids = new Set(r.matchIds);
+      s.matches = s.matches.filter(x => !ids.has(x.id));
+      s.rounds = s.rounds.filter(x => x.id !== r.id);
+    }
+    const invalidated = refresh(s);
+    if (impact.regenerateRoundId) {
+      const g = generateNextSwissRound(s);
+      if (g.ok) s = g.state;
+    }
+    if (s.tournament.settings.autoAssign) s = autoAssignCourts(s).state;
+    touch(s);
+    return ok(s, { invalidated, impact });
+  }
+
+  /**
+   * Enregistre ou corrige un résultat.
+   * input = { scoreA, scoreB } ou { forfeitBy: playerId } (le joueur indiqué perd par forfait).
+   * opts.confirm = true pour accepter les conséquences signalées (needsConfirm).
+   */
+  function setResult(state, matchId, input, opts) {
+    const m = findMatch(state, matchId);
+    if (!m) return fail('NOT_FOUND', 'Match introuvable.');
+    if (m.isBye) return fail('BYE', 'Une exemption n\'a pas de score.');
+    if (!m.playerAId || !m.playerBId) return fail('NOT_READY', 'Les deux joueurs de ce match ne sont pas encore connus.');
+    let result;
+    if (input && input.forfeitBy) {
+      if (input.forfeitBy !== m.playerAId && input.forfeitBy !== m.playerBId) return fail('INVALID', 'Joueur forfait inconnu pour ce match.');
+      const loser = input.forfeitBy;
+      result = { type: 'forfait', winnerId: loser === m.playerAId ? m.playerBId : m.playerAId, loserId: loser, scoreA: null, scoreB: null };
+    } else {
+      const err = validateScore(state, m, input && input.scoreA, input && input.scoreB);
+      if (err) return fail('INVALID_SCORE', err);
+      const a = Number(input.scoreA), b = Number(input.scoreB);
+      result = {
+        type: 'score', scoreA: a, scoreB: b, draw: a === b,
+        winnerId: a > b ? m.playerAId : (b > a ? m.playerBId : null),
+        loserId: a > b ? m.playerBId : (b > a ? m.playerAId : null)
+      };
+    }
+    return applyChange(state, matchId, (s, mm) => {
+      mm.result = makeResult(mm, result);
+      mm.invalidated = null;
+      mm.courtId = null;
+      mm.completedAt = Date.now();
+    }, opts);
+  }
+
+  function clearResult(state, matchId, opts) {
+    const m = findMatch(state, matchId);
+    if (!m) return fail('NOT_FOUND', 'Match introuvable.');
+    if (m.isBye) return fail('BYE', 'Une exemption ne peut pas être effacée.');
+    if (!m.result) return fail('NO_RESULT', 'Ce match n\'a pas de résultat.');
+    if (m.result.auto) return fail('AUTO', 'Forfait automatique (joueur retiré) : réintégrez le joueur pour l\'annuler.');
+    return applyChange(state, matchId, (s, mm) => { mm.result = null; mm.completedAt = null; }, opts);
+  }
+
+  /** Retrait (abandon) ou réintégration d'un joueur. */
+  function setWithdrawn(state, playerId, withdrawn) {
+    const s = clone(state);
+    const p = s.players.find(x => x.id === playerId);
+    if (!p) return fail('NOT_FOUND', 'Joueur introuvable.');
+    p.withdrawn = !!withdrawn;
+    if (!withdrawn) {
+      // Annule les forfaits automatiques qui le concernent (s'ils n'ont pas de conséquence aval jouée).
+      s.matches.forEach(m => {
+        if (m.result && m.result.auto && (m.playerAId === playerId || m.playerBId === playerId)) { m.result = null; m.completedAt = null; }
+      });
+    } else {
+      s.matches.forEach(m => {
+        if (!m.result && m.courtId && (m.playerAId === playerId || m.playerBId === playerId)) m.courtId = null;
+      });
+    }
+    refresh(s);
+    let out = s;
+    if (out.tournament.settings.autoAssign) out = autoAssignCourts(out).state;
+    touch(out);
+    return ok(out);
+  }
+
+  /** Ajout d'un retardataire pendant le brassage, uniquement entre deux rondes. */
+  function addLatePlayer(state, name) {
+    const t = state.tournament;
+    if (t.phase === 'setup') return fail('SETUP', 'Utilisez la liste des joueurs de la configuration.');
+    if (t.phase !== 'swiss') return fail('LOCKED', 'Les tableaux sont générés : impossible d\'ajouter un joueur sans rouvrir le brassage.');
+    if (!swissRoundsComplete(state)) return fail('ROUND_IN_PROGRESS', 'Attendez la fin de la ronde en cours pour ajouter un joueur.');
+    const n = normalizeName(name);
+    if (!n) return fail('EMPTY', 'Nom vide.');
+    if (state.players.some(p => nameKey(p.name) === nameKey(n))) return fail('DUPLICATES', 'Ce nom existe déjà.');
+    const s = clone(state);
+    s.players.push({ id: nextId(s, 'player', 'P'), name: n, initialSeed: s.players.length + 1, withdrawn: false, late: true });
+    touch(s);
+    return ok(s);
+  }
+
+  function renamePlayer(state, playerId, name) {
+    const n = normalizeName(name);
+    if (!n) return fail('EMPTY', 'Nom vide.');
+    if (state.players.some(p => p.id !== playerId && nameKey(p.name) === nameKey(n))) return fail('DUPLICATES', 'Ce nom existe déjà.');
+    const s = clone(state);
+    const p = s.players.find(x => x.id === playerId);
+    if (!p) return fail('NOT_FOUND', 'Joueur introuvable.');
+    p.name = n;
+    touch(s);
+    return ok(s);
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Planification sur les terrains
+   * ------------------------------------------------------------------ *
+   * La génération des rencontres est indépendante de leur planification. Un match « prêt »
+   * (deux joueurs connus, pas de résultat) peut être affecté à un terrain libre si aucun de
+   * ses joueurs n'est déjà sur un terrain. Priorité : tour le moins avancé, puis joueurs qui
+   * attendent depuis le plus longtemps (repos), puis ordre des divisions et numéro de match.
+   */
+  function courtIds(state) {
+    const out = [];
+    for (let i = 1; i <= state.tournament.settings.courts; i++) out.push('C' + i);
+    return out;
+  }
+
+  function courtNumber(courtId) { return Number(String(courtId).replace(/\D/g, '')); }
+
+  function busyPlayerIds(state) {
+    const busy = new Set();
+    state.matches.forEach(m => {
+      if (m.courtId && !m.result) { busy.add(m.playerAId); busy.add(m.playerBId); }
+    });
+    return busy;
+  }
+
+  function lastPlayedAt(state) {
+    const last = new Map();
+    state.matches.forEach(m => {
+      if (!m.result || m.isBye || !m.completedAt) return;
+      [m.playerAId, m.playerBId].forEach(id => { if (id) last.set(id, Math.max(last.get(id) || 0, m.completedAt)); });
+    });
+    return last;
+  }
+
+  function readyQueue(state) {
+    const last = lastPlayedAt(state);
+    const divOrder = new Map(state.divisions.map((d, i) => [d.id, i]));
+    return state.matches
+      .filter(m => m.status === 'ready' && !m.courtId && !m.isBye)
+      .map(m => ({ m, wait: Math.max(last.get(m.playerAId) || 0, last.get(m.playerBId) || 0) }))
+      .sort((x, y) => (x.m.depth - y.m.depth) || (x.wait - y.wait)
+        || ((divOrder.get(x.m.divisionId) || 0) - (divOrder.get(y.m.divisionId) || 0)) || (x.m.number - y.m.number))
+      .map(x => x.m);
+  }
+
+  function freeCourtIds(state) {
+    const used = new Set(state.matches.filter(m => m.courtId && !m.result).map(m => m.courtId));
+    return courtIds(state).filter(c => !used.has(c));
+  }
+
+  function autoAssignCourts(state) {
+    const s = clone(state);
+    const busy = busyPlayerIds(s);
+    const free = freeCourtIds(s);
+    const queue = readyQueue(s);
+    const assigned = [];
+    for (const c of free) {
+      const idx = queue.findIndex(m => !busy.has(m.playerAId) && !busy.has(m.playerBId));
+      if (idx < 0) break;
+      const m = queue.splice(idx, 1)[0];
+      const mm = findMatch(s, m.id);
+      mm.courtId = c; mm.startedAt = Date.now();
+      busy.add(m.playerAId); busy.add(m.playerBId);
+      assigned.push(m.id);
+    }
+    refresh(s);
+    return ok(s, { assigned });
+  }
+
+  function assignCourt(state, matchId, courtId) {
+    const m = findMatch(state, matchId);
+    if (!m) return fail('NOT_FOUND', 'Match introuvable.');
+    if (m.result) return fail('COMPLETED', 'Match déjà terminé.');
+    if (!m.playerAId || !m.playerBId) return fail('NOT_READY', 'Les joueurs de ce match ne sont pas encore connus.');
+    if (!courtIds(state).includes(courtId)) return fail('INVALID_COURT', 'Terrain inexistant.');
+    const occupant = state.matches.find(x => x.courtId === courtId && !x.result && x.id !== matchId);
+    if (occupant) return fail('COURT_BUSY', 'Ce terrain est déjà occupé par ' + matchName(state, occupant) + '.');
+    const busy = state.matches.filter(x => x.id !== matchId && x.courtId && !x.result);
+    const pm = playerMap(state);
+    for (const x of busy) {
+      for (const id of [m.playerAId, m.playerBId]) {
+        if (x.playerAId === id || x.playerBId === id) return fail('PLAYER_BUSY', pm.get(id).name + ' joue déjà sur un autre terrain.');
+      }
+    }
+    const s = clone(state);
+    const mm = findMatch(s, matchId);
+    mm.courtId = courtId; mm.startedAt = Date.now();
+    refresh(s);
+    touch(s);
+    return ok(s);
+  }
+
+  function unassignCourt(state, matchId) {
+    const s = clone(state);
+    const m = findMatch(s, matchId);
+    if (!m) return fail('NOT_FOUND', 'Match introuvable.');
+    m.courtId = null; m.startedAt = null;
+    refresh(s);
+    touch(s);
+    return ok(s);
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Classements de phase finale
+   * ------------------------------------------------------------------ */
+  function poolRanking(state, division) {
+    const ms = state.matches.filter(m => m.divisionId === division.id);
+    const st = new Map(division.playerIds.map((id, i) => [id, { playerId: id, seedIndex: i, wins: 0, losses: 0, pf: 0, pa: 0 }]));
+    ms.forEach(m => {
+      if (!m.result) return;
+      const w = st.get(m.result.winnerId), l = st.get(m.result.loserId);
+      if (w) w.wins++;
+      if (l) l.losses++;
+      if (m.result.type === 'score') {
+        const a = st.get(m.playerAId), b = st.get(m.playerBId);
+        a.pf += m.result.scoreA; a.pa += m.result.scoreB; b.pf += m.result.scoreB; b.pa += m.result.scoreA;
+      }
+    });
+    const list = Array.from(st.values());
+    // Victoires, puis victoires dans les confrontations entre ex aequo, puis différence, points marqués, rang du brassage.
+    const h2h = (group, id) => ms.filter(m => m.result && group.includes(m.playerAId) && group.includes(m.playerBId) && m.result.winnerId === id).length;
+    list.sort((a, b) => b.wins - a.wins);
+    const out = [];
+    let i = 0;
+    while (i < list.length) {
+      let j = i;
+      while (j < list.length && list[j].wins === list[i].wins) j++;
+      const group = list.slice(i, j);
+      const ids = group.map(g => g.playerId);
+      group.forEach(g => { g.h2h = h2h(ids, g.playerId); g.diff = g.pf - g.pa; });
+      group.sort((a, b) => (b.h2h - a.h2h) || (b.diff - a.diff) || (b.pf - a.pf) || (a.seedIndex - b.seedIndex));
+      out.push.apply(out, group);
+      i = j;
+    }
+    return { rows: out, complete: ms.every(m => !!m.result) };
+  }
+
+  /**
+   * Classement final : place attribuée à chaque joueur (null si pas encore déterminée).
+   * Tableau : le vainqueur d'un match « Places a-(a+1) » obtient a, le perdant a+1.
+   * Poule : rang de poule une fois tous les matchs joués.
+   */
+  function finalStandings(state) {
+    const pm = playerMap(state);
+    const rows = [];
+    const swiss = swissStandings(state);
+    const swissRank = new Map(swiss.map(s => [s.playerId, s.rank]));
+    state.divisions.forEach(d => {
+      const ranks = new Map();
+      if (d.format === 'bracket') {
+        state.matches.filter(m => m.divisionId === d.id && m.placementFinal && m.result).forEach(m => {
+          ranks.set(m.result.winnerId, m.targetRanks[0]);
+          ranks.set(m.result.loserId, m.targetRanks[0] + 1);
+        });
+      } else {
+        const pr = poolRanking(state, d);
+        if (pr.complete) pr.rows.forEach((r, i) => ranks.set(r.playerId, d.globalRankStart + i));
+      }
+      d.playerIds.forEach(id => {
+        rows.push({
+          playerId: id, name: pm.get(id).name, divisionId: d.id, divisionName: d.name,
+          rank: ranks.has(id) ? ranks.get(id) : null, swissRank: swissRank.get(id) || null,
+          withdrawn: !!pm.get(id).withdrawn, path: playerPath(state, id)
+        });
+      });
+    });
+    rows.sort((a, b) => (a.rank == null) - (b.rank == null) || (a.rank || 0) - (b.rank || 0));
+    const assigned = rows.filter(r => r.rank != null).length;
+    return { rows, assigned, total: state.players.length, complete: state.divisions.length > 0 && assigned === state.players.length };
+  }
+
+  function playerPath(state, playerId) {
+    return state.matches
+      .filter(m => m.phase === 'final' && m.result && (m.playerAId === playerId || m.playerBId === playerId))
+      .map(m => ({ matchId: m.id, number: m.number, label: m.label, won: m.result.winnerId === playerId, forfeit: m.result.type === 'forfait' }));
+  }
+
+  /** Vérifie qu'un classement final attribue les rangs 1..N exactement une fois. */
+  function checkFinalRanking(state) {
+    const fs = finalStandings(state);
+    const errors = [];
+    const ranks = fs.rows.map(r => r.rank);
+    const n = state.players.length;
+    const seen = new Set();
+    ranks.forEach(r => {
+      if (r == null) errors.push('Place non attribuée.');
+      else if (seen.has(r)) errors.push('Place ' + r + ' attribuée deux fois.');
+      else seen.add(r);
+    });
+    for (let i = 1; i <= n; i++) if (!seen.has(i)) errors.push('Place ' + i + ' manquante.');
+    const ids = new Set(fs.rows.map(r => r.playerId));
+    if (ids.size !== n) errors.push('Joueur manquant ou dupliqué dans le classement.');
+    return { ok: errors.length === 0, errors, standings: fs };
+  }
+
+  /** Statistiques globales par joueur (brassage + phase finale). */
+  function playerStats(state) {
+    const st = new Map(state.players.map(p => [p.id, { playerId: p.id, name: p.name, played: 0, wins: 0, losses: 0, draws: 0, byes: 0, pf: 0, pa: 0 }]));
+    state.matches.forEach(m => {
+      if (!m.result) return;
+      if (m.result.type === 'exemption') { st.get(m.playerAId).byes++; return; }
+      const a = st.get(m.playerAId), b = st.get(m.playerBId);
+      a.played++; b.played++;
+      if (m.result.type === 'score') {
+        a.pf += m.result.scoreA; a.pa += m.result.scoreB; b.pf += m.result.scoreB; b.pa += m.result.scoreA;
+      }
+      if (m.result.draw) { a.draws++; b.draws++; }
+      else { st.get(m.result.winnerId).wins++; st.get(m.result.loserId).losses++; }
+    });
+    return Array.from(st.values());
+  }
+
+  /** Estimation du nombre de vagues et de la durée (rotation de 2 min comprise). */
+  function estimateSchedule(n, courts, swissRounds, sizes, minutes) {
+    const perRound = Math.floor(n / 2);
+    const swissWaves = swissRounds * Math.ceil(perRound / Math.max(1, courts));
+    let finalWaves = 0;
+    if (sizes && sizes.length) {
+      const byDepth = new Map();
+      sizes.forEach(sz => {
+        if (divisionFormat(sz) === 'bracket') {
+          for (let d = 0; d < log2int(sz); d++) byDepth.set(d, (byDepth.get(d) || 0) + sz / 2);
+        } else {
+          const rounds = sz % 2 ? sz : sz - 1;
+          const per = Math.floor(sz / 2);
+          for (let d = 0; d < rounds; d++) byDepth.set(d, (byDepth.get(d) || 0) + per);
+        }
+      });
+      byDepth.forEach(v => { finalWaves += Math.ceil(v / Math.max(1, courts)); });
+    }
+    const waves = swissWaves + finalWaves;
+    return { swissWaves, finalWaves, waves, minutes: waves * ((minutes || 8) + 2) };
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Sérialisation, migration, validation d'import
+   * ------------------------------------------------------------------ */
+  function migrate(data) {
+    if (!data || typeof data !== 'object') throw new Error('Données illisibles.');
+    if (data.schemaVersion == null) throw new Error('Fichier non reconnu (schemaVersion absent).');
+    if (data.schemaVersion > SCHEMA_VERSION) throw new Error('Fichier créé par une version plus récente de l\'application (schéma ' + data.schemaVersion + ').');
+    // Version 1 = version actuelle : rien à migrer. Les futures migrations s'ajouteront ici.
+    data.tournament.settings = Object.assign(defaultSettings(), data.tournament.settings || {});
+    data.counters = data.counters || { player: 0, match: 0, round: 0 };
+    return data;
+  }
+
+  function validateState(data) {
+    const errors = [];
+    try { migrate(data); } catch (e) { return { ok: false, errors: [e.message] }; }
+    if (!data.tournament || !data.tournament.id) errors.push('Tournoi sans identifiant.');
+    if (!Array.isArray(data.players)) errors.push('Liste des joueurs absente.');
+    if (!Array.isArray(data.matches)) errors.push('Liste des matchs absente.');
+    if (!Array.isArray(data.rounds)) errors.push('Liste des rondes absente.');
+    if (!Array.isArray(data.divisions)) errors.push('Liste des divisions absente.');
+    if (errors.length) return { ok: false, errors };
+    const pids = new Set();
+    data.players.forEach(p => { if (!p.id || pids.has(p.id)) errors.push('Identifiant de joueur invalide ou dupliqué : ' + p.id); pids.add(p.id); });
+    const mids = new Set();
+    data.matches.forEach(m => {
+      if (!m.id || mids.has(m.id)) errors.push('Identifiant de match invalide ou dupliqué : ' + m.id);
+      mids.add(m.id);
+      ['playerAId', 'playerBId'].forEach(k => { if (m[k] && !pids.has(m[k])) errors.push('Match ' + m.id + ' : joueur inconnu ' + m[k]); });
+    });
+    data.matches.forEach(m => {
+      ['sourceA', 'sourceB'].forEach(k => { if (m[k] && !mids.has(m[k].matchId)) errors.push('Match ' + m.id + ' : source inconnue.'); });
+    });
+    return { ok: errors.length === 0, errors };
+  }
+
+  function serialize(state) { return JSON.stringify(state); }
+
+  function deserialize(text) {
+    const data = JSON.parse(text);
+    const v = validateState(data);
+    if (!v.ok) throw new Error(v.errors.slice(0, 5).join(' '));
+    refresh(data);
+    return data;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Exports CSV
+   * ------------------------------------------------------------------ */
+  function csvCell(v) {
+    const s = v == null ? '' : String(v);
+    return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function toCSV(rows) {
+    return '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n') + '\r\n';
+  }
+
+  function standingsCSV(state) {
+    const fs = finalStandings(state);
+    const stats = new Map(playerStats(state).map(s => [s.playerId, s]));
+    const swiss = swissStandings(state);
+    const header = ['Place finale', 'Joueur', 'Division', 'Rang brassage', 'Matchs', 'Victoires', 'Défaites', 'Nuls', 'Exemptions', 'Points marqués', 'Points encaissés', 'Différence', 'Forfait général'];
+    const pm = playerMap(state);
+    const base = state.divisions.length ? fs.rows : swiss.map(s => ({ playerId: s.playerId, rank: null, divisionName: '', swissRank: s.rank }));
+    const rows = base.map(r => {
+      const s = stats.get(r.playerId);
+      return [r.rank == null ? '' : r.rank, pm.get(r.playerId).name, r.divisionName || '', r.swissRank || '', s.played, s.wins, s.losses, s.draws, s.byes, s.pf, s.pa, s.pf - s.pa, pm.get(r.playerId).withdrawn ? 'oui' : ''];
+    });
+    return toCSV([header].concat(rows));
+  }
+
+  function resultsCSV(state) {
+    const pm = playerMap(state);
+    const name = id => (id && pm.get(id) ? pm.get(id).name : '');
+    const header = ['Phase', 'Ronde / Division', 'Match', 'Places en jeu', 'Joueur A', 'Joueur B', 'Score A', 'Score B', 'Vainqueur', 'Type', 'Terrain', 'État'];
+    const rows = state.matches.map(m => {
+      const round = state.rounds.find(r => r.id === m.roundId);
+      const div = state.divisions.find(d => d.id === m.divisionId);
+      const r = m.result || {};
+      return [
+        m.phase === 'swiss' ? 'Brassage' : 'Tableau',
+        m.phase === 'swiss' ? 'Ronde ' + (round ? round.number : '') : 'Division ' + (div ? div.name : ''),
+        m.label || m.number,
+        m.targetRanks ? m.targetRanks[0] + '-' + m.targetRanks[1] : '',
+        name(m.playerAId), m.isBye ? '(exemption)' : name(m.playerBId),
+        r.scoreA != null ? r.scoreA : '', r.scoreB != null ? r.scoreB : '',
+        r.draw ? 'nul' : name(r.winnerId), r.type || '', m.courtId ? 'Terrain ' + courtNumber(m.courtId) : '', m.status
+      ];
+    });
+    return toCSV([header].concat(rows));
+  }
+
+  return {
+    SCHEMA_VERSION, SPORTS, CRITERIA, POOL_SIZES, BRACKET_SIZES,
+    // utilitaires
+    hashString, rngFor, shuffle, isPowerOfTwo, nameKey, normalizeName, divisionLetter, randomSeed, clone,
+    // configuration
+    createTournament, analyzeNames, parseCSVNames, setPlayers, updateSettings, updateInfo, renamePlayer,
+    startTournament, resetMatches, addLatePlayer, setWithdrawn,
+    // brassage
+    swissStandings, computeSwissPairings, generateNextSwissRound, canGenerateNextRound, swissRoundsComplete,
+    minCostPerfectMatching, roundMatches,
+    // divisions / tableaux
+    divisionFormat, matchesPerPlayer, matchesInDivision, validatePartition, describePartition, proposePartitions,
+    seedOrder, canFreezeDivisions, freezeDivisions, reopenSwiss, seedingOrder, poolRanking,
+    // résultats
+    validateScore, setResult, clearResult, analyzeImpact, describeImpact, refresh, matchName, findMatch,
+    // terrains
+    courtIds, courtNumber, readyQueue, freeCourtIds, autoAssignCourts, assignCourt, unassignCourt, busyPlayerIds,
+    // classements
+    finalStandings, checkFinalRanking, playerStats, estimateSchedule,
+    // persistance / exports
+    migrate, validateState, serialize, deserialize, standingsCSV, resultsCSV, toCSV
+  };
+});
+
+</script>
+<script>
+/*
+ * Tournoi EPS — interface (DOM). Toute la logique de tournoi est dans engine.js ;
+ * ce fichier ne fait qu'afficher l'état et appeler le moteur.
+ */
+(function () {
+  'use strict';
+  const E = window.TournoiEngine;
+
+  /* ------------------------------------------------------------------ *
+   * Persistance locale (localStorage, schéma versionné, sauvegarde de secours)
+   * ------------------------------------------------------------------ */
+  const KEY_INDEX = 'tournoiEPS.index';
+  const KEY_UI = 'tournoiEPS.ui';
+  const keyT = id => 'tournoiEPS.t.' + id;
+  const keyBak = id => 'tournoiEPS.bak.' + id;
+
+  const Store = {
+    ok: (function () {
+      try { const k = '__test__'; localStorage.setItem(k, '1'); localStorage.removeItem(k); return true; } catch (e) { return false; }
+    })(),
+    memory: new Map(),
+    get(key) { if (!this.ok) return this.memory.get(key) || null; return localStorage.getItem(key); },
+    set(key, value) { if (!this.ok) { this.memory.set(key, value); return; } localStorage.setItem(key, value); },
+    del(key) { if (!this.ok) { this.memory.delete(key); return; } localStorage.removeItem(key); },
+    list() {
+      try { return JSON.parse(this.get(KEY_INDEX) || '[]'); } catch (e) { return []; }
+    },
+    load(id) {
+      const raw = this.get(keyT(id));
+      if (!raw) return null;
+      try { return E.deserialize(raw); }
+      catch (e) {
+        const bak = this.get(keyBak(id));
+        if (bak) {
+          try { const s = E.deserialize(bak); toast('Sauvegarde principale illisible : version de secours restaurée.', true); return s; } catch (e2) { /* ignore */ }
+        }
+        toast('Tournoi illisible : ' + e.message, true);
+        return null;
+      }
+    },
+    save(state) {
+      try {
+        const prev = this.get(keyT(state.tournament.id));
+        if (prev) this.set(keyBak(state.tournament.id), prev);
+        this.set(keyT(state.tournament.id), E.serialize(state));
+        const idx = this.list().filter(x => x.id !== state.tournament.id);
+        idx.unshift({ id: state.tournament.id, name: state.tournament.name, date: state.tournament.date, updatedAt: Date.now() });
+        this.set(KEY_INDEX, JSON.stringify(idx));
+        ui.storageError = null;
+        return true;
+      } catch (e) {
+        ui.storageError = 'Sauvegarde locale impossible (' + (e && e.name === 'QuotaExceededError' ? 'espace de stockage plein' : e.message) + '). Exportez le tournoi en JSON pour ne rien perdre.';
+        return false;
+      }
+    },
+    remove(id) {
+      this.del(keyT(id)); this.del(keyBak(id));
+      this.set(KEY_INDEX, JSON.stringify(this.list().filter(x => x.id !== id)));
+    }
+  };
+
+  /* ------------------------------------------------------------------ *
+   * État de l'interface
+   * ------------------------------------------------------------------ */
+  let state = null;
+  const ui = {
+    tab: 'config', division: null, zoom: 1, partitionKey: null, customSizes: '',
+    dialogMatchId: null, storageError: null, externalChange: false, gym: false
+  };
+  try { Object.assign(ui, JSON.parse(localStorage.getItem(KEY_UI) || '{}'), { dialogMatchId: null, storageError: null, externalChange: false }); } catch (e) { /* ignore */ }
+
+  const TABS = [
+    { id: 'config', label: 'Configuration' },
+    { id: 'swiss', label: 'Brassage' },
+    { id: 'brackets', label: 'Tableaux' },
+    { id: 'courts', label: 'Terrains' },
+    { id: 'standings', label: 'Classement' }
+  ];
+
+  const $ = (sel, root) => (root || document).querySelector(sel);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const pname = id => { const p = state.players.find(x => x.id === id); return p ? p.name : '?'; };
+  const courtLabel = c => 'Terrain ' + E.courtNumber(c);
+  const courtShort = c => 'T' + E.courtNumber(c);
+  const fmt = x => (Math.round(x * 100) / 100).toString().replace('.', ',');
+
+  function saveUI() {
+    try { localStorage.setItem(KEY_UI, JSON.stringify({ tab: ui.tab, division: ui.division, zoom: ui.zoom, currentId: state && state.tournament.id, gym: ui.gym })); } catch (e) { /* ignore */ }
+  }
+
+  let toastTimer = null;
+  function toast(msg, isError) {
+    const el = $('#live');
+    el.textContent = msg;
+    el.className = 'toast show' + (isError ? ' error' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = 'toast'; }, isError ? 6000 : 2500);
+  }
+
+  /** Applique le résultat d'une opération du moteur ; gère la confirmation des conséquences. */
+  function run(op, successMsg) {
+    let res = op({});
+    if (!res.ok && res.needsConfirm) {
+      if (!window.confirm(res.error + '\n\nConfirmer la modification ?')) return false;
+      res = op({ confirm: true });
+    }
+    if (!res.ok) { toast(res.error, true); return false; }
+    commit(res.state);
+    if (successMsg) toast(successMsg);
+    return res;
+  }
+
+  function commit(newState) {
+    state = newState;
+    Store.save(state);
+    saveUI();
+    render();
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Rendu général
+   * ------------------------------------------------------------------ */
+  function render() {
+    renderSwitcher();
+    renderTabs();
+    renderBanner();
+    const view = $('#view');
+    const keep = $('.bracket-scroll');
+    const scroll = keep ? [keep.scrollLeft, keep.scrollTop] : null;
+    view.classList.toggle('gym', ui.tab === 'courts' && ui.gym);
+    const renderers = { config: renderConfig, swiss: renderSwiss, brackets: renderBrackets, courts: renderCourts, standings: renderStandings };
+    view.innerHTML = renderers[ui.tab]();
+    const sc = $('.bracket-scroll');
+    if (sc && scroll) { sc.scrollLeft = scroll[0]; sc.scrollTop = scroll[1]; }
+    if (ui.dialogMatchId && $('#matchDialog').open) renderDialog();
+  }
+
+  function renderSwitcher() {
+    const sel = $('#tournamentSelect');
+    const list = Store.list();
+    if (!list.some(x => x.id === state.tournament.id)) list.unshift({ id: state.tournament.id, name: state.tournament.name, date: state.tournament.date });
+    sel.innerHTML = list.map(x => `<option value="${esc(x.id)}" ${x.id === state.tournament.id ? 'selected' : ''}>${esc(x.name)} — ${esc(x.date || '')}</option>`).join('');
+  }
+
+  function renderTabs() {
+    const ready = state.matches.filter(m => m.status === 'in_progress').length;
+    $('#tabs').innerHTML = TABS.map(t => {
+      const badge = t.id === 'courts' && ready ? `<span class="badge" aria-label="${ready} matchs en cours">${ready}</span>` : '';
+      return `<button type="button" class="tab" role="tab" id="tab-${t.id}" aria-controls="view" aria-selected="${ui.tab === t.id}" data-action="tab" data-tab="${t.id}">${t.label}${badge}</button>`;
+    }).join('');
+  }
+
+  function renderBanner() {
+    const b = $('#banner');
+    const msgs = [];
+    if (!Store.ok) msgs.push('<span>Le stockage local est indisponible (navigation privée ?) : les données seront perdues à la fermeture. Exportez régulièrement en JSON.</span>');
+    if (ui.storageError) msgs.push(`<span>${esc(ui.storageError)}</span> <button class="btn btn-small" data-action="export-json">Exporter maintenant</button>`);
+    if (ui.externalChange) msgs.push('<span>Ce tournoi a été modifié dans un autre onglet.</span> <button class="btn btn-small" data-action="reload-external">Recharger</button>');
+    b.hidden = !msgs.length;
+    b.innerHTML = msgs.join(' ');
+  }
+
+  const PHASES = { setup: 'Configuration', swiss: 'Brassage', finals: 'Tableaux de classement', done: 'Terminé' };
+
+  /* ------------------------------------------------------------------ *
+   * Onglet Configuration
+   * ------------------------------------------------------------------ */
+  function renderConfig() {
+    const t = state.tournament, st = t.settings;
+    const started = t.phase !== 'setup';
+    const lockNote = started ? '<small>Verrouillé après le début (réinitialisation possible plus bas).</small>' : '';
+    const sports = E.SPORTS.map(s => `<option ${s === t.sport ? 'selected' : ''}>${esc(s)}</option>`).join('');
+    return `
+      <section class="card">
+        <div class="card-head"><h2>Tournoi</h2><span class="chip">Phase : ${PHASES[t.phase]}</span></div>
+        <div class="grid">
+          <label class="field"><span>Nom du tournoi</span><input type="text" data-info="name" value="${esc(t.name)}" maxlength="80"></label>
+          <label class="field"><span>Sport</span><select data-info="sport">${sports}</select></label>
+          <label class="field"><span>Date</span><input type="date" data-info="date" value="${esc(t.date)}"></label>
+          <div class="field">
+            <label for="seedInput">Graine du tirage (reproductible)</label>
+            <div class="inline"><input id="seedInput" type="text" data-info="seed" value="${esc(t.seed)}" ${started ? 'disabled' : ''} style="flex:1">
+            <button type="button" class="btn btn-small" data-action="new-seed" ${started ? 'disabled' : ''}>Nouvelle</button></div>
+            ${lockNote}
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Règles et terrains</h2>
+        <div class="grid">
+          <div class="field"><label for="courtsInput">Nombre de terrains</label>
+            <div class="stepper"><button type="button" class="btn btn-icon" data-action="step" data-setting="courts" data-delta="-1" aria-label="Un terrain de moins">−</button>
+            <input id="courtsInput" type="number" min="1" max="40" inputmode="numeric" data-setting="courts" value="${st.courts}">
+            <button type="button" class="btn btn-icon" data-action="step" data-setting="courts" data-delta="1" aria-label="Un terrain de plus">+</button></div>
+            <small>Jamais plus d'un match par terrain ni par joueur à la fois.</small></div>
+          <div class="field"><label for="roundsInput">Rondes de brassage</label>
+            <div class="stepper"><button type="button" class="btn btn-icon" data-action="step" data-setting="swissRounds" data-delta="-1" aria-label="Une ronde de moins">−</button>
+            <input id="roundsInput" type="number" min="0" max="12" inputmode="numeric" data-setting="swissRounds" value="${st.swissRounds}" ${t.phase === 'finals' || t.phase === 'done' ? 'disabled' : ''}>
+            <button type="button" class="btn btn-icon" data-action="step" data-setting="swissRounds" data-delta="1" aria-label="Une ronde de plus">+</button></div>
+            <small>0 = tableaux directs (têtes de série ou tirage).</small></div>
+          <label class="field"><span>Format des matchs</span>
+            <select data-setting="matchFormat">
+              <option value="temps" ${st.matchFormat === 'temps' ? 'selected' : ''}>Durée limitée</option>
+              <option value="score" ${st.matchFormat === 'score' ? 'selected' : ''}>Score cible</option>
+            </select></label>
+          ${st.matchFormat === 'temps'
+            ? `<label class="field"><span>Durée d'un match (min)</span><input type="number" min="1" max="120" inputmode="numeric" data-setting="matchMinutes" value="${st.matchMinutes}"></label>`
+            : `<label class="field"><span>Score cible (points)</span><input type="number" min="1" max="99" inputmode="numeric" data-setting="targetScore" value="${st.targetScore}"></label>
+               <label class="field"><span>Durée estimée d'un match (min)</span><input type="number" min="1" max="120" inputmode="numeric" data-setting="matchMinutes" value="${st.matchMinutes}"></label>`}
+        </div>
+        <label class="check"><input type="checkbox" data-setting="useSeeds" ${st.useSeeds ? 'checked' : ''} ${started ? 'disabled' : ''}>
+          <span><b>Têtes de série</b> : l'ordre de la liste des joueurs est le classement initial (1ʳᵉ ligne = tête de série n°1). Sinon, tirage aléatoire reproductible.</span></label>
+        <label class="check"><input type="checkbox" data-setting="allowDrawsSwiss" ${st.allowDrawsSwiss ? 'checked' : ''} ${started ? 'disabled' : ''}>
+          <span><b>Matchs nuls autorisés au brassage</b> (½ point). Toujours interdits dans les tableaux : jouer un point décisif.</span></label>
+        <label class="field"><span>Exemption (effectif impair)</span>
+          <select data-setting="byePoints" ${started ? 'disabled' : ''}>
+            <option value="1" ${st.byePoints ? 'selected' : ''}>1 point de match (sans victoire ni points marqués)</option>
+            <option value="0" ${!st.byePoints ? 'selected' : ''}>0 point de match</option>
+          </select></label>
+        <label class="check"><input type="checkbox" data-setting="autoAssign" ${st.autoAssign ? 'checked' : ''}>
+          <span><b>Affectation automatique des terrains</b> dès qu'un terrain se libère.</span></label>
+      </section>
+
+      ${renderPlayersCard()}
+      ${renderRecap()}
+
+      <section class="card danger no-print">
+        <h2>Zone sensible</h2>
+        <p class="muted small">Ces actions demandent une confirmation. Pensez à exporter une sauvegarde JSON avant.</p>
+        <div class="btn-row">
+          <button type="button" class="btn btn-danger" data-action="reset-matches" ${t.phase === 'setup' ? 'disabled' : ''}>Réinitialiser les matchs (garder les joueurs)</button>
+          <button type="button" class="btn btn-danger" data-action="delete-tournament">Supprimer ce tournoi</button>
+        </div>
+      </section>`;
+  }
+
+  function renderPlayersCard() {
+    const t = state.tournament;
+    if (t.phase === 'setup') {
+      const text = state.players.map(p => p.name).join('\n');
+      return `
+      <section class="card">
+        <div class="card-head"><h2>Joueurs (${state.players.length})</h2>
+          <div class="btn-row">
+            <label class="btn btn-small" for="csvInput">Importer un CSV</label>
+            <input type="file" id="csvInput" accept=".csv,.txt,text/csv,text/plain" hidden>
+            <button type="button" class="btn btn-small" data-action="demo-players">Joueurs fictifs…</button>
+          </div></div>
+        <label class="field"><span>Un joueur par ligne (collage multiligne possible)${t.settings.useSeeds ? ' — ordre = têtes de série' : ''}</span>
+          <textarea id="playersText" spellcheck="false" autocomplete="off" placeholder="Prénom N.&#10;Prénom N.&#10;…">${esc(text)}</textarea></label>
+        <p id="playersCheck" class="small" aria-live="polite">${esc(playersCheckText(text))}</p>
+        <div class="btn-row"><button type="button" class="btn btn-primary" data-action="save-players">Enregistrer la liste</button>
+        <span class="muted small">CSV : première colonne, séparateur ; , ou tabulation.</span></div>
+      </section>`;
+    }
+    const canAdd = t.phase === 'swiss' && E.swissRoundsComplete(state);
+    const rows = state.players.map(p => `
+      <tr class="${p.withdrawn ? 'withdrawn' : ''}">
+        <td class="num">${p.initialSeed}</td><td>${esc(p.name)}${p.late ? ' <span class="chip">retardataire</span>' : ''}</td>
+        <td>${p.withdrawn ? 'Retiré (forfait général)' : 'Actif'}</td>
+        <td><div class="inline">
+          <button type="button" class="btn btn-small" data-action="rename" data-id="${p.id}">Renommer</button>
+          <button type="button" class="btn btn-small ${p.withdrawn ? '' : 'btn-danger'}" data-action="withdraw" data-id="${p.id}" data-value="${p.withdrawn ? 0 : 1}">${p.withdrawn ? 'Réintégrer' : 'Retirer'}</button>
+        </div></td>
+      </tr>`).join('');
+    return `
+      <section class="card">
+        <div class="card-head"><h2>Joueurs (${state.players.length})</h2></div>
+        <p class="muted small">La liste est verrouillée. « Retirer » = abandon : ses matchs non joués sont perdus par forfait, il garde une place dans le classement final.</p>
+        <div class="table-wrap"><table><thead><tr><th class="num">N°</th><th>Nom</th><th>État</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <div class="btn-row">
+          <label class="sr-only" for="lateName">Nom du retardataire</label>
+          <input type="text" id="lateName" placeholder="Retardataire (entre deux rondes)" ${canAdd ? '' : 'disabled'} style="max-width:320px">
+          <button type="button" class="btn" data-action="add-late" ${canAdd ? '' : 'disabled'}>Ajouter</button>
+          ${canAdd ? '' : '<span class="muted small">Ajout possible uniquement pendant le brassage, entre deux rondes.</span>'}
+        </div>
+      </section>`;
+  }
+
+  function playersCheckText(text) {
+    const a = E.analyzeNames(text);
+    const parts = [a.names.length + ' joueur(s)'];
+    if (a.empty) parts.push(a.empty + ' ligne(s) vide(s) ignorée(s)');
+    if (a.errors.length) parts.push('⚠ ' + a.errors.join(' '));
+    else parts.push('✓ liste valide');
+    return parts.join(' — ');
+  }
+
+  function renderRecap() {
+    const t = state.tournament, st = t.settings;
+    const n = state.players.length;
+    if (n < 2) return `<section class="card"><h2>Récapitulatif</h2><p class="muted">Ajoutez au moins 2 joueurs.</p></section>`;
+    const perRound = Math.floor(n / 2);
+    const props = E.proposePartitions(n);
+    const rec = props[0];
+    const est = E.estimateSchedule(n, st.courts, st.swissRounds, rec ? rec.sizes : null, st.matchMinutes);
+    const waveSwiss = Math.ceil(perRound / st.courts);
+    const startBtn = t.phase === 'setup'
+      ? `<button type="button" class="btn btn-primary btn-big" data-action="start">${st.swissRounds ? 'Démarrer le brassage' : 'Passer directement aux tableaux'}</button>`
+      : `<button type="button" class="btn btn-big" data-action="tab" data-tab="${t.phase === 'swiss' ? 'swiss' : 'brackets'}">Aller à la phase en cours →</button>`;
+    return `
+      <section class="card">
+        <h2>Récapitulatif</h2>
+        <div class="kpis">
+          <div class="kpi"><b>${n}</b><span>joueurs</span></div>
+          <div class="kpi"><b>${st.courts}</b><span>terrains</span></div>
+          <div class="kpi"><b>${st.swissRounds}</b><span>rondes de brassage</span></div>
+          <div class="kpi"><b>${perRound}</b><span>matchs par ronde${n % 2 ? ' + 1 exemption' : ''}</span></div>
+          <div class="kpi"><b>${waveSwiss}</b><span>vague(s) par ronde</span></div>
+          <div class="kpi"><b>${rec ? rec.total : '—'}</b><span>matchs de classement (${rec ? rec.sizes.join(' + ') : '—'})</span></div>
+          <div class="kpi"><b>≈ ${est.minutes} min</b><span>${est.waves} vagues × (${st.matchMinutes} min + 2 min de rotation)</span></div>
+        </div>
+        ${n > 2 * st.courts ? `<p class="muted small">${n - 2 * Math.min(st.courts, perRound)} joueur(s) en attente à chaque vague : prévoyez un rôle (arbitrage, marque, observation).</p>` : ''}
+        ${rec && rec.warnings.length ? `<div class="notice small"><b>Divisions recommandées : ${rec.sizes.join(' + ')}</b> (choix définitif après le brassage)<ul>${rec.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>` : ''}
+        <div class="btn-row">${startBtn}</div>
+      </section>`;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Cartes de match (brassage, poules, terrains)
+   * ------------------------------------------------------------------ */
+  function statusText(m) {
+    if (m.isBye) return 'Exemption';
+    if (m.result) {
+      if (m.result.type === 'forfait') return m.result.auto ? 'Forfait (joueur retiré)' : 'Victoire par forfait';
+      return m.result.draw ? 'Match nul' : 'Terminé';
+    }
+    if (m.courtId) return 'En cours — ' + courtLabel(m.courtId) + (m.invalidated ? ' (à rejouer)' : '');
+    if (m.invalidated) return 'Résultat invalidé — à rejouer';
+    if (m.status === 'ready') return 'Prêt — en attente d\'un terrain';
+    return 'En attente des matchs sources';
+  }
+
+  function sourceText(m, side) {
+    const src = side === 'A' ? m.sourceA : m.sourceB;
+    if (!src) return 'À déterminer';
+    const sm = state.matches.find(x => x.id === src.matchId);
+    return 'En attente du ' + (src.take === 'winner' ? 'vainqueur' : 'perdant') + ' de M' + (sm ? sm.number : '?');
+  }
+
+  function scoreText(m) {
+    if (!m.result || m.isBye) return '';
+    if (m.result.type === 'forfait') return 'forfait';
+    return m.result.scoreA + ' – ' + m.result.scoreB;
+  }
+
+  function matchCard(m, opts) {
+    opts = opts || {};
+    if (m.isBye) {
+      return `<div class="match-card st-bye"><span class="court-badge">—</span><span class="players"><span><b>${esc(pname(m.playerAId))}</b></span><span class="state-label">Exempt cette ronde</span></span><span></span></div>`;
+    }
+    const w = m.result && m.result.winnerId;
+    const a = m.playerAId ? esc(pname(m.playerAId)) : `<i>${esc(sourceText(m, 'A'))}</i>`;
+    const b = m.playerBId ? esc(pname(m.playerBId)) : `<i>${esc(sourceText(m, 'B'))}</i>`;
+    const prefix = opts.prefix ? esc(opts.prefix) + ' · ' : '';
+    return `<button type="button" class="match-card st-${m.status}" data-action="open-match" data-id="${m.id}">
+      <span class="court-badge ${m.courtId && !m.result ? 'on' : ''}">${m.courtId && !m.result ? courtShort(m.courtId) : (m.result ? '✓' : '—')}</span>
+      <span class="players">
+        <span class="${w && w === m.playerAId ? 'win' : ''}">${a}</span>
+        <span class="${w && w === m.playerBId ? 'win' : ''}">${b}</span>
+        <span class="state-label">${prefix}${esc(statusText(m))}</span>
+      </span>
+      <span class="score">${esc(scoreText(m))}</span>
+    </button>`;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Onglet Brassage
+   * ------------------------------------------------------------------ */
+  function renderSwiss() {
+    const t = state.tournament;
+    if (t.phase === 'setup') return `<section class="card"><h2>Brassage</h2><p>Le tournoi n'a pas commencé.</p><button class="btn btn-primary" data-action="tab" data-tab="config">Aller à la configuration</button></section>`;
+    if (!state.rounds.length) return `<section class="card"><h2>Brassage</h2><p>Aucune ronde de brassage : formez directement les divisions.</p><button class="btn btn-primary" data-action="tab" data-tab="brackets">Aller aux tableaux</button></section>`;
+    const total = t.settings.swissRounds;
+    const can = E.canGenerateNextRound(state);
+    const canFreeze = E.canFreezeDivisions(state);
+    const current = state.rounds[state.rounds.length - 1];
+    const cur = E.roundMatches(state, current).filter(m => !m.isBye);
+    const done = cur.filter(m => m.result).length;
+    let action = '';
+    if (can.ok) action = `<button type="button" class="btn btn-primary btn-big" data-action="next-round">Générer la ronde ${state.rounds.length + 1}</button>`;
+    else if (canFreeze.ok) action = `<button type="button" class="btn btn-primary btn-big" data-action="tab" data-tab="brackets">Brassage terminé : former les divisions →</button>`;
+    else if (t.phase === 'finals' || t.phase === 'done') action = '<span class="chip">Têtes de série figées</span>';
+    const rounds = state.rounds.slice().reverse().map(r => {
+      const ms = E.roundMatches(state, r);
+      const played = ms.filter(m => m.result && !m.isBye).length, count = ms.filter(m => !m.isBye).length;
+      const body = `<div class="match-list">${ms.map(m => matchCard(m)).join('')}</div>
+        ${r.repeats ? `<p class="small notice">${r.repeats} rencontre(s) répétée(s) inévitable(s) dans cette ronde.</p>` : ''}
+        ${r.optimal === false ? '<p class="small notice">Recherche d\'appariement interrompue (effectif très grand) : meilleure solution trouvée conservée.</p>' : ''}`;
+      if (r === current) return `<section class="card"><div class="card-head"><h2>Ronde ${r.number} / ${total}</h2><span class="chip">${played}/${count} matchs terminés</span></div>${body}</section>`;
+      return `<details class="card"><summary>Ronde ${r.number} — ${played}/${count} terminés</summary>${body}</details>`;
+    }).join('');
+    return `
+      <section class="card">
+        <div class="card-head"><h2>Brassage — ronde ${current.number} sur ${total}</h2><span class="chip">${done}/${cur.length} matchs de la ronde terminés</span></div>
+        <p class="muted small">Touchez un match pour saisir ou corriger le score. La ronde suivante est calculée quand toute la ronde est terminée.</p>
+        <div class="btn-row">${action}
+          <button type="button" class="btn" data-action="tab" data-tab="courts">Vue terrains</button></div>
+      </section>
+      ${rounds}
+      ${renderSwissStandings()}`;
+  }
+
+  function renderSwissStandings(title) {
+    const st = E.swissStandings(state);
+    const rows = st.map(s => `
+      <tr class="${s.withdrawn ? 'withdrawn' : ''}">
+        <td class="num">${s.rank}</td><td>${esc(s.name)}</td>
+        <td class="num"><b>${fmt(s.matchPoints)}</b></td><td class="num">${s.played}</td><td class="num">${s.wins}</td>
+        <td class="num">${s.draws}</td><td class="num">${s.losses}</td><td class="num">${s.byes}</td>
+        <td class="num">${s.pointsFor}</td><td class="num">${s.pointsAgainst}</td><td class="num">${s.diff > 0 ? '+' : ''}${s.diff}</td>
+        <td class="num">${fmt(s.avgDiff)}</td><td class="num">${fmt(s.oppStrength)}</td>
+        <td>${esc(s.opponents.map(pname).join(', '))}</td>
+        <td class="small muted">${s.decidedBy ? esc(s.decidedBy) : ''}</td>
+      </tr>`).join('');
+    return `
+      <section class="card">
+        <h2>${title || 'Classement provisoire du brassage'}</h2>
+        <p class="muted small">Départage : ${E.CRITERIA.map((c, i) => (i + 1) + '. ' + c.label).join(' ; ')}. Les moyennes sont calculées par match avec score ; une exemption n'est ni une victoire ni des points marqués.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th class="num">Rg</th><th>Joueur</th><th class="num" title="Points de match">Pts</th><th class="num" title="Matchs joués">J</th><th class="num" title="Victoires">V</th><th class="num" title="Nuls">N</th><th class="num" title="Défaites">D</th><th class="num" title="Exemptions">Ex</th><th class="num" title="Points marqués">PM</th><th class="num" title="Points encaissés">PE</th><th class="num">Diff</th><th class="num" title="Différence moyenne par match">Moy.</th><th class="num" title="Force des adversaires">Adv.</th><th>Adversaires rencontrés</th><th>Départagé du précédent par</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+      </section>`;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Onglet Tableaux
+   * ------------------------------------------------------------------ */
+  function renderBrackets() {
+    const t = state.tournament;
+    if (t.phase === 'setup') return `<section class="card"><h2>Tableaux</h2><p>Le tournoi n'a pas commencé.</p></section>`;
+    if (!state.divisions.length) return renderPartitionChooser();
+    if (!ui.division || !state.divisions.some(d => d.id === ui.division)) ui.division = state.divisions[0].id;
+    const d = state.divisions.find(x => x.id === ui.division);
+    const fs = E.finalStandings(state);
+    const assignedDiv = fs.rows.filter(r => r.divisionId === d.id && r.rank != null).length;
+    const tabs = state.divisions.map(x => `<button type="button" class="btn btn-small" aria-pressed="${x.id === d.id}" data-action="division" data-id="${x.id}">${x.format === 'pool' ? 'Poule' : 'Tableau'} ${esc(x.name)} (places ${x.globalRankStart}-${x.globalRankStart + x.size - 1})</button>`).join('');
+    const pure = state.divisions.every(x => x.format === 'bracket');
+    return `
+      <section class="card">
+        <div class="card-head"><h2>Phase de classement</h2><span class="chip">Places attribuées : ${fs.assigned} / ${fs.total}</span></div>
+        ${pure ? '' : '<p class="notice small">Format mixte : au moins une division se joue en poule. Ce n\'est plus un tableau intégral pur pour ces joueurs.</p>'}
+        ${state.divisions.length > 1 ? '<p class="muted small">Rappel : les frontières de divisions sont fixées par le brassage. Un joueur d\'une division ne peut pas finir devant un joueur d\'une division supérieure.</p>' : ''}
+        <div class="division-tabs" role="group" aria-label="Choix de la division">${tabs}</div>
+      </section>
+      <section class="card fullscreen-target" id="divisionPanel">
+        <div class="card-head"><h2>${d.format === 'pool' ? 'Poule' : 'Tableau'} ${esc(d.name)} — places ${d.globalRankStart} à ${d.globalRankStart + d.size - 1}</h2>
+          <span class="chip">${assignedDiv} / ${d.size} places attribuées</span></div>
+        ${d.format === 'bracket' ? renderBracketView(d) : renderPoolView(d)}
+      </section>
+      <section class="card no-print">
+        <h2>Correction du brassage</h2>
+        <p class="muted small">Pour corriger un résultat du brassage, il faut rouvrir le brassage : <b>tous les tableaux et leurs résultats seront supprimés</b>.</p>
+        <button type="button" class="btn btn-danger" data-action="reopen-swiss">Rouvrir le brassage…</button>
+      </section>`;
+  }
+
+  function currentPartition(n) {
+    const props = E.proposePartitions(n, 6);
+    let sizes = null, custom = false;
+    if (ui.partitionKey === 'custom') {
+      custom = true;
+      sizes = ui.customSizes.split(/[^0-9]+/).filter(Boolean).map(Number);
+    } else {
+      const p = props.find(x => x.sizes.join('+') === ui.partitionKey) || props[0];
+      sizes = p ? p.sizes : null;
+    }
+    return { props, sizes, custom };
+  }
+
+  function renderPartitionChooser() {
+    const can = E.canFreezeDivisions(state);
+    const n = state.players.length;
+    if (!can.ok) {
+      return `<section class="card"><h2>Tableaux</h2><p>${esc(can.reason)}</p><button class="btn" data-action="tab" data-tab="swiss">Retour au brassage</button></section>`;
+    }
+    const { props, sizes, custom } = currentPartition(n);
+    const st = state.tournament.settings;
+    const selKey = custom ? 'custom' : (sizes ? sizes.join('+') : '');
+    const options = props.map(p => {
+      const key = p.sizes.join('+');
+      const est = E.estimateSchedule(n, st.courts, 0, p.sizes, st.matchMinutes);
+      return `<label class="partition">
+        <input type="radio" name="partition" value="${key}" data-action="partition" ${key === selKey ? 'checked' : ''}>
+        <span><b>${p.divisions.map(d => d.size).join(' + ')}</b> ${p.recommended ? '<span class="chip win">recommandé</span>' : ''} ${p.pure ? '' : '<span class="chip loss">avec poule</span>'}
+          <span class="div-chips">${p.divisions.map(d => `<span class="chip">${d.name} : places ${d.rankStart}-${d.rankEnd} · ${d.format === 'pool' ? 'poule' : 'tableau'} · ${d.matchesPerPlayer} match(s)/joueur</span>`).join('')}</span>
+          <span class="small">${p.total} matchs de classement · ≈ ${est.minutes} min sur ${st.courts} terrain(s) (${est.finalWaves} vagues)</span>
+        </span></label>`;
+    }).join('');
+    let preview = '', valid = false, warnings = [];
+    if (sizes && sizes.length) {
+      const v = E.validatePartition(sizes, n);
+      if (!v.ok) preview = `<p class="error-text">${esc(v.error)}</p>`;
+      else {
+        valid = true;
+        const desc = E.describePartition(sizes);
+        warnings = desc.warnings;
+        const order = E.seedingOrder(state);
+        let off = 0;
+        preview = `<div class="preview-cols">${desc.divisions.map(d => {
+          const ids = order.slice(off, off + d.size); off += d.size;
+          return `<div><h3>${d.format === 'pool' ? 'Poule' : 'Tableau'} ${d.name} (places ${d.rankStart}-${d.rankEnd})</h3><ol start="${d.rankStart}">${ids.map(id => `<li>${esc(pname(id))}</li>`).join('')}</ol></div>`;
+        }).join('')}</div>`;
+      }
+    }
+    return `
+      <section class="card">
+        <h2>Former les divisions de classement</h2>
+        <p>Les joueurs sont répartis dans l'ordre du classement de brassage. Dans chaque division, un tableau intégral (ou une poule pour 3, 5 ou 6 joueurs) attribue <b>chaque place exactement une fois</b>.</p>
+        ${options}
+        <label class="partition"><input type="radio" name="partition" value="custom" data-action="partition" ${custom ? 'checked' : ''}>
+          <span><b>Répartition personnalisée</b><br><span class="small muted">Tailles séparées par des virgules, dans l'ordre (ex. 16, 8). Tableau : 2, 4, 8, 16, 32, 64 · poule : 3, 5, 6.</span>
+          <input type="text" id="customSizes" value="${esc(ui.customSizes)}" placeholder="ex. 8, 8, 8" inputmode="numeric" style="margin-top:6px;max-width:260px"></span></label>
+      </section>
+      <section class="card">
+        <h2>Aperçu</h2>
+        ${warnings.length ? `<div class="notice small"><ul>${warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>` : ''}
+        ${preview}
+        <div class="btn-row"><button type="button" class="btn btn-primary btn-big" data-action="freeze" ${valid ? '' : 'disabled'}>Figer les têtes de série et générer les tableaux</button></div>
+      </section>
+      ${renderSwissStandings('Résultats du brassage (base des têtes de série)')}`;
+  }
+
+  function renderPoolView(d) {
+    const ms = state.matches.filter(m => m.divisionId === d.id);
+    const pr = E.poolRanking(state, d);
+    const cell = (a, b) => {
+      if (a === b) return '<td class="num muted">×</td>';
+      const m = ms.find(x => (x.playerAId === a && x.playerBId === b) || (x.playerAId === b && x.playerBId === a));
+      if (!m || !m.result) return '<td class="num muted">·</td>';
+      if (m.result.type === 'forfait') return `<td class="num">${m.result.winnerId === a ? 'V' : 'D'} (f)</td>`;
+      const sa = m.playerAId === a ? m.result.scoreA : m.result.scoreB, sb = m.playerAId === a ? m.result.scoreB : m.result.scoreA;
+      return `<td class="num">${sa > sb ? '<b>' + sa + '–' + sb + '</b>' : sa + '–' + sb}</td>`;
+    };
+    const grid = `<div class="table-wrap"><table><thead><tr><th>Joueur</th>${d.playerIds.map((id, i) => `<th class="num" title="${esc(pname(id))}">${i + 1}</th>`).join('')}</tr></thead>
+      <tbody>${d.playerIds.map((a, i) => `<tr><td>${i + 1}. ${esc(pname(a))}</td>${d.playerIds.map(b => cell(a, b)).join('')}</tr>`).join('')}</tbody></table></div>`;
+    const ranking = `<div class="table-wrap"><table><thead><tr><th class="num">Place</th><th>Joueur</th><th class="num">V</th><th class="num">D</th><th class="num">Diff</th></tr></thead>
+      <tbody>${pr.rows.map((r, i) => `<tr><td class="num">${pr.complete ? d.globalRankStart + i : '—'}</td><td>${esc(pname(r.playerId))}</td><td class="num">${r.wins}</td><td class="num">${r.losses}</td><td class="num">${r.pf - r.pa}</td></tr>`).join('')}</tbody></table></div>`;
+    return `<p class="muted small">Poule (tous contre tous) : classement par victoires, puis confrontations entre ex aequo, différence de points, points marqués, rang du brassage. Les places sont attribuées quand tous les matchs sont joués.</p>
+      ${grid}<h3 style="margin-top:12px">Matchs</h3><div class="match-list">${ms.map(m => matchCard(m, { prefix: 'M' + m.number })).join('')}</div>
+      <h3 style="margin-top:12px">Classement de la poule ${pr.complete ? '' : '(provisoire)'}</h3>${ranking}`;
+  }
+
+  /* --- Arbre SVG du tableau intégral --- */
+  const SVG_COLORS = { initial: '#1d4ed8', upper: '#15803d', lower: '#c2410c', text: '#111827', muted: '#4b5567', bg: '#ffffff', done: '#f0fdf4' };
+
+  function truncate(s, n) { s = String(s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+
+  function renderBracketView(d) {
+    return `
+      <div class="legend" aria-label="Légende">
+        <span><span class="box" style="border-color:${SVG_COLORS.initial}"></span>Premier tour</span>
+        <span><span class="sw w"></span>Gagnants (trait plein, « V »)</span>
+        <span><span class="sw l"></span>Perdants (pointillés, « P »)</span>
+        <span><span class="box" style="border-color:${SVG_COLORS.upper}"></span>Branche haute</span>
+        <span><span class="box" style="border-color:${SVG_COLORS.lower};border-style:dashed"></span>Branche basse</span>
+      </div>
+      <div class="bracket-tools">
+        <button type="button" class="btn btn-icon" data-action="zoom" data-delta="-0.15" aria-label="Dézoomer">−</button>
+        <span class="small" aria-live="polite">${Math.round(ui.zoom * 100)} %</span>
+        <button type="button" class="btn btn-icon" data-action="zoom" data-delta="0.15" aria-label="Zoomer">+</button>
+        <button type="button" class="btn btn-small" data-action="zoom-fit">Ajuster</button>
+        <button type="button" class="btn btn-small" data-action="zoom-reset">100 % / recentrer</button>
+        <button type="button" class="btn btn-small" data-action="fullscreen">Plein écran</button>
+        <button type="button" class="btn btn-small" data-action="export-svg">SVG</button>
+        <button type="button" class="btn btn-small" data-action="export-png">PNG</button>
+        <button type="button" class="btn btn-small" data-action="print-landscape">Imprimer</button>
+      </div>
+      <div class="bracket-scroll" id="bracketScroll">${bracketSVG(d)}</div>
+      <p class="muted small">Touchez un match (ou Tab puis Entrée) pour saisir ou corriger son résultat. Les joueurs des tours suivants sont calculés à partir des résultats réels.</p>`;
+  }
+
+  function bracketSVG(d) {
+    const ms = state.matches.filter(m => m.divisionId === d.id);
+    const W = 232, H = 104, CG = 64, RG = 16, TOP = 44, LEFT = 16;
+    const cols = Math.max.apply(null, ms.map(m => m.depth)) + 1;
+    const rows = Math.max.apply(null, ms.map(m => m.row)) + 1;
+    const width = LEFT * 2 + cols * W + (cols - 1) * CG;
+    const height = TOP + rows * (H + RG) + 8;
+    const x = depth => LEFT + depth * (W + CG);
+    const y = row => TOP + row * (H + RG);
+    const byId = new Map(ms.map(m => [m.id, m]));
+    const total = d.size;
+    let out = `<svg xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Tableau ${esc(d.name)}, places ${d.globalRankStart} à ${d.globalRankStart + total - 1}" viewBox="0 0 ${width} ${height}" width="${Math.round(width * ui.zoom)}" height="${Math.round(height * ui.zoom)}" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif">
+      <style>
+        .t{font-size:13px;fill:${SVG_COLORS.text}} .h{font-size:12px;font-weight:700} .m{font-size:11.5px;fill:${SVG_COLORS.muted}}
+        .w{font-weight:700} .i{font-style:italic;fill:${SVG_COLORS.muted};font-size:11.5px} .s{font-size:14px;font-weight:700;fill:${SVG_COLORS.text}}
+        .col{font-size:13px;font-weight:700;fill:${SVG_COLORS.muted}} .el{font-size:11px;font-weight:700}
+      </style>
+      <rect x="0" y="0" width="${width}" height="${height}" fill="#f8fafc"/>`;
+    for (let c = 0; c < cols; c++) {
+      const label = c === 0 ? 'Tour 1 — places ' + d.globalRankStart + '-' + (d.globalRankStart + total - 1) : (c === cols - 1 ? 'Matchs de places' : 'Tour ' + (c + 1) + ' — classement');
+      out += `<text class="col" x="${x(c)}" y="26">${esc(label)}</text>`;
+    }
+    // Arêtes
+    ms.forEach(m => {
+      [['A', m.sourceA], ['B', m.sourceB]].forEach(([side, src]) => {
+        if (!src) return;
+        const s = byId.get(src.matchId);
+        if (!s) return;
+        const x1 = x(s.depth) + W, y1 = y(s.row) + H / 2;
+        const x2 = x(m.depth), y2 = y(m.row) + (side === 'A' ? H * 0.38 : H * 0.66);
+        const mx = (x1 + x2) / 2;
+        const win = src.take === 'winner';
+        const color = win ? SVG_COLORS.upper : SVG_COLORS.lower;
+        out += `<path d="M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}" fill="none" stroke="${color}" stroke-width="2.5" ${win ? '' : 'stroke-dasharray="7 5"'} opacity="0.9"><title>${win ? 'Vainqueur' : 'Perdant'} de M${s.number} → M${m.number}</title></path>`;
+        out += `<text class="el" x="${x1 + 4}" y="${y1 + (win ? -5 : 14)}" fill="${color}">${win ? 'V' : 'P'}</text>`;
+      });
+    });
+    // Nœuds
+    ms.forEach(m => {
+      const nx = x(m.depth), ny = y(m.row);
+      const color = SVG_COLORS[m.branch] || SVG_COLORS.initial;
+      const dashed = m.branch === 'lower' ? 'stroke-dasharray="8 4"' : '';
+      const w = m.result && m.result.winnerId;
+      const fill = m.result ? SVG_COLORS.done : (m.invalidated ? '#fff7ed' : SVG_COLORS.bg);
+      const nameA = m.playerAId ? truncate(pname(m.playerAId), 22) : truncate(sourceText(m, 'A'), 30);
+      const nameB = m.playerBId ? truncate(pname(m.playerBId), 22) : truncate(sourceText(m, 'B'), 30);
+      const sA = m.result && m.result.type === 'score' ? m.result.scoreA : (m.result && m.result.type === 'forfait' ? (m.result.loserId === m.playerAId ? 'F' : '') : '');
+      const sB = m.result && m.result.type === 'score' ? m.result.scoreB : (m.result && m.result.type === 'forfait' ? (m.result.loserId === m.playerBId ? 'F' : '') : '');
+      let foot = statusText(m);
+      if (m.placementFinal && m.result) foot = m.targetRanks[0] + 'ᵉ ' + truncate(pname(m.result.winnerId), 12) + ' · ' + (m.targetRanks[0] + 1) + 'ᵉ ' + truncate(pname(m.result.loserId), 12);
+      const head = 'M' + m.number + ' · ' + (m.depth === 0 ? m.label + ' · ' : '') + (m.placementFinal ? 'Places ' + m.targetRanks[0] + '-' + m.targetRanks[1] : 'Places ' + m.targetRanks[0] + '-' + m.targetRanks[1]);
+      const court = m.courtId && !m.result ? courtShort(m.courtId) : '';
+      const aria = `Match ${m.number}, places ${m.targetRanks[0]} à ${m.targetRanks[1]}. ${m.playerAId ? pname(m.playerAId) : sourceText(m, 'A')} contre ${m.playerBId ? pname(m.playerBId) : sourceText(m, 'B')}. ${scoreText(m)}. ${statusText(m)}${court ? ', ' + courtLabel(m.courtId) : ''}${w ? '. Vainqueur : ' + pname(w) : ''}.`;
+      out += `<g class="node" data-action="open-match" data-id="${m.id}" tabindex="0" role="button" aria-label="${esc(aria)}" transform="translate(${nx},${ny})">
+        <rect class="frame" x="0" y="0" width="${W}" height="${H}" rx="10" fill="${fill}" stroke="${color}" stroke-width="2.5" ${dashed}/>
+        <rect x="0" y="0" width="${W}" height="22" rx="10" fill="${color}"/><rect x="0" y="12" width="${W}" height="10" fill="${color}"/>
+        <text class="h" x="8" y="15" fill="#fff">${esc(head)}</text>
+        ${court ? `<text class="h" x="${W - 8}" y="15" fill="#fff" text-anchor="end">${esc(court)}</text>` : ''}
+        <text class="${m.playerAId ? 't' : 'i'} ${w && w === m.playerAId ? 'w' : ''}" x="8" y="42">${w && w === m.playerAId ? '▶ ' : ''}${esc(nameA)}</text>
+        <text class="s" x="${W - 8}" y="42" text-anchor="end">${esc(sA)}</text>
+        <line x1="8" x2="${W - 8}" y1="52" y2="52" stroke="#e5e7eb"/>
+        <text class="${m.playerBId ? 't' : 'i'} ${w && w === m.playerBId ? 'w' : ''}" x="8" y="68">${w && w === m.playerBId ? '▶ ' : ''}${esc(nameB)}</text>
+        <text class="s" x="${W - 8}" y="68" text-anchor="end">${esc(sB)}</text>
+        <text class="m" x="8" y="${H - 10}">${esc(truncate(foot, 38))}</text>
+      </g>`;
+    });
+    out += '</svg>';
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Onglet Terrains (vue gymnase)
+   * ------------------------------------------------------------------ */
+  function matchPrefix(m) {
+    if (m.phase === 'swiss') return 'Ronde ' + ((state.rounds.find(r => r.id === m.roundId) || {}).number || '');
+    const d = state.divisions.find(x => x.id === m.divisionId);
+    return (d ? d.name : '') + '·M' + m.number + ' (places ' + m.targetRanks[0] + '-' + m.targetRanks[1] + ')';
+  }
+
+  function renderCourts() {
+    const t = state.tournament;
+    const courts = E.courtIds(state);
+    const active = new Map(state.matches.filter(m => m.courtId && !m.result).map(m => [m.courtId, m]));
+    const queue = E.readyQueue(state);
+    const busy = E.busyPlayerIds(state);
+    const free = E.freeCourtIds(state);
+    const pending = state.matches.filter(m => m.status === 'pending').length;
+    const cards = courts.map(c => {
+      const m = active.get(c);
+      if (!m) return `<div class="court-card"><h3>${courtLabel(c)}</h3><p class="free">Libre</p></div>`;
+      return `<div class="court-card busy"><h3>${courtLabel(c)}</h3>
+        <div class="vs">${esc(pname(m.playerAId))}<span class="sep">contre</span>${esc(pname(m.playerBId))}</div>
+        <span class="muted small">${esc(matchPrefix(m))}</span>
+        <button type="button" class="btn btn-primary btn-big" data-action="open-match" data-id="${m.id}">Saisir le score</button></div>`;
+    }).join('');
+    const q = queue.map((m, i) => {
+      const blocked = busy.has(m.playerAId) || busy.has(m.playerBId);
+      return `<li><span><span class="who">${i + 1}. ${esc(pname(m.playerAId))} – ${esc(pname(m.playerBId))}</span><br><span class="small muted">${esc(matchPrefix(m))}${blocked ? ' · un joueur est encore sur un terrain' : ''}</span></span>
+        ${free.length && !blocked ? `<button type="button" class="btn btn-small" data-action="assign" data-id="${m.id}" data-court="${free[0]}">Lancer sur ${courtShort(free[0])}</button>` : `<button type="button" class="btn btn-small" data-action="open-match" data-id="${m.id}">Détails</button>`}</li>`;
+    }).join('');
+    const waiting = state.players.filter(p => !p.withdrawn && !busy.has(p.id)).map(p => esc(p.name));
+    const fs = state.divisions.length ? E.finalStandings(state) : null;
+    return `
+      <section class="card">
+        <div class="card-head"><h2>${esc(t.name)} — ${PHASES[t.phase]}</h2>
+          ${fs ? `<span class="chip">Places attribuées : ${fs.assigned} / ${fs.total}</span>` : ''}</div>
+        <div class="btn-row no-print">
+          <button type="button" class="btn" data-action="auto-assign" ${free.length && queue.length ? '' : 'disabled'}>Affecter les terrains libres</button>
+          <button type="button" class="btn" data-action="gym-toggle" aria-pressed="${ui.gym}">${ui.gym ? 'Texte normal' : 'Grand texte'}</button>
+          <button type="button" class="btn" data-action="fullscreen-courts">Plein écran</button>
+          ${E.canGenerateNextRound(state).ok ? '<button type="button" class="btn btn-primary" data-action="next-round">Générer la ronde suivante</button>' : ''}
+        </div>
+      </section>
+      <div class="courts-grid fullscreen-target" id="courtsGrid">${cards}</div>
+      <section class="card" style="margin-top:14px">
+        <h2>Prochains matchs (${queue.length})</h2>
+        ${queue.length ? `<ol class="queue">${q}</ol>` : `<p class="muted">Aucun match prêt${pending ? ' — ' + pending + ' match(s) attendent le résultat de leurs matchs sources' : ''}.</p>`}
+      </section>
+      <section class="card"><h2>Joueurs au repos (${waiting.length})</h2><p class="small">${waiting.join(', ') || '—'}</p></section>`;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Onglet Classement
+   * ------------------------------------------------------------------ */
+  function renderStandings() {
+    const exportBtns = `<div class="btn-row no-print">
+      <button type="button" class="btn" data-action="export-csv">Classement CSV</button>
+      <button type="button" class="btn" data-action="export-results">Résultats CSV</button>
+      <button type="button" class="btn" data-action="export-json">Sauvegarde JSON</button>
+      <button type="button" class="btn" data-action="print">Imprimer / PDF</button></div>`;
+    const t = state.tournament;
+    const stats = new Map(E.playerStats(state).map(s => [s.playerId, s]));
+    if (!state.divisions.length) {
+      return `<section class="card"><h2>Classement</h2><p class="muted">Le classement final sera disponible après les tableaux. En attendant : classement provisoire du brassage.</p>${exportBtns}</section>${state.players.length ? renderSwissStandings() : ''}`;
+    }
+    const fs = E.finalStandings(state);
+    const chk = fs.complete ? E.checkFinalRanking(state) : null;
+    let lastDiv = null;
+    const rows = fs.rows.map(r => {
+      const s = stats.get(r.playerId);
+      const sep = lastDiv && lastDiv !== r.divisionId ? 'div-sep' : '';
+      lastDiv = r.divisionId;
+      const path = r.path.map(p => `<span class="chip ${p.won ? 'win' : 'loss'}" title="${esc(p.label)}">${p.won ? 'V' : 'P'} M${p.number}${p.forfeit ? ' (f)' : ''}</span>`).join(' ');
+      return `<tr class="${sep} ${r.withdrawn ? 'withdrawn' : ''}"><td class="num"><b>${r.rank == null ? '—' : r.rank}</b></td><td>${esc(r.name)}</td><td>${esc(r.divisionName)}</td>
+        <td class="num">${r.swissRank || '—'}</td><td>${path}</td><td class="num">${s.played}</td><td class="num">${s.wins}</td><td class="num">${s.losses}</td><td class="num">${s.byes}</td><td class="num">${s.pf - s.pa}</td></tr>`;
+    }).join('');
+    return `
+      <section class="card">
+        <div class="card-head"><h1 style="font-size:1.3rem;margin:0">${esc(t.name)} — classement final</h1><span class="chip">${fs.assigned} / ${fs.total} places attribuées</span></div>
+        <p class="small muted">${esc(t.sport)} · ${esc(t.date)} · ${state.players.length} joueurs · divisions ${state.divisions.map(d => d.name + ' (' + d.size + ')').join(', ')}</p>
+        ${chk ? (chk.ok ? '<p class="ok-text">✓ Classement complet : places 1 à ' + fs.total + ', chacune attribuée une seule fois.</p>' : '<p class="error-text">Incohérence détectée : ' + esc(chk.errors.join(' ')) + '</p>') : '<p class="muted">Classement en cours : les places s\'affichent au fur et à mesure des matchs de places.</p>'}
+        <p class="small muted">La <b>place finale</b> provient des tableaux ; le <b>rang de brassage</b> n'a servi qu'à former les divisions. Un tableau intégral donne un rang pour chacun, pas une mesure parfaite du niveau sportif (taux de victoires et place finale sont deux choses différentes).</p>
+        ${exportBtns}
+        <div class="table-wrap"><table>
+          <thead><tr><th class="num">Place</th><th>Joueur</th><th>Div.</th><th class="num">Rang brassage</th><th>Parcours en tableau</th><th class="num">Matchs</th><th class="num">V</th><th class="num">D</th><th class="num">Ex</th><th class="num">Diff</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+      </section>`;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Dialogue de saisie / correction d'un match
+   * ------------------------------------------------------------------ */
+  function openMatch(id) {
+    const m = state.matches.find(x => x.id === id);
+    if (!m || m.isBye) return;
+    ui.dialogMatchId = id;
+    renderDialog();
+    const dlg = $('#matchDialog');
+    if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', ''); }
+    const first = dlg.querySelector('input[name="scoreA"]') || dlg.querySelector('button');
+    if (first) first.focus();
+  }
+
+  function closeDialog() {
+    const dlg = $('#matchDialog');
+    ui.dialogMatchId = null;
+    if (dlg.open) { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); }
+  }
+
+  function renderDialog() {
+    const m = state.matches.find(x => x.id === ui.dialogMatchId);
+    const dlg = $('#matchDialog');
+    if (!m) { closeDialog(); return; }
+    const ready = m.playerAId && m.playerBId;
+    const title = m.phase === 'swiss' ? matchPrefix(m) + ' — match ' + m.number : 'Division ' + matchPrefix(m);
+    const r = m.result && m.result.type === 'score' ? m.result : null;
+    const st = state.tournament.settings;
+    const free = E.freeCourtIds(state);
+    const courtOptions = E.courtIds(state).map(c => `<option value="${c}" ${m.courtId === c ? 'selected' : ''} ${!free.includes(c) && m.courtId !== c ? 'disabled' : ''}>${courtLabel(c)}${!free.includes(c) && m.courtId !== c ? ' (occupé)' : ''}</option>`).join('');
+    const scoreRow = (side, id, val) => `
+      <div class="score-row">
+        <label for="score${side}">${esc(pname(id))}</label>
+        <div class="score-input">
+          <button type="button" class="btn" data-action="score-step" data-side="${side}" data-delta="-1" aria-label="Retirer un point à ${esc(pname(id))}">−</button>
+          <input id="score${side}" name="score${side}" type="number" inputmode="numeric" min="0" max="999" value="${val == null ? '' : val}" autocomplete="off">
+          <button type="button" class="btn" data-action="score-step" data-side="${side}" data-delta="1" aria-label="Ajouter un point à ${esc(pname(id))}">+</button>
+        </div>
+      </div>`;
+    dlg.innerHTML = `
+      <form class="dlg" id="matchForm" novalidate>
+        <div class="dlg-head"><div><h2 id="matchDialogTitle">${esc(title)}</h2>
+          <p class="small muted">${esc(statusText(m))}${m.targetRanks ? ' · places en jeu : ' + m.targetRanks[0] + ' à ' + m.targetRanks[1] : ''}${st.matchFormat === 'score' ? ' · score cible ' + st.targetScore : ' · ' + st.matchMinutes + ' min'}</p></div>
+          <button type="button" class="btn btn-icon" data-action="close-dialog" aria-label="Fermer">✕</button></div>
+        ${m.invalidated && !m.result ? `<p class="notice small">Résultat précédent invalidé suite à la correction d'un match amont${m.invalidated.previous && m.invalidated.previous.type === 'score' ? ' (ancien score : ' + m.invalidated.previous.scoreA + '–' + m.invalidated.previous.scoreB + ')' : ''}. Les joueurs ont pu changer : faites rejouer ce match.</p>` : ''}
+        ${m.sourceA || m.sourceB ? `<p class="small muted">Prérequis : ${esc(sourceText(Object.assign({}, m, { playerAId: null }), 'A').replace('En attente du ', ''))} et ${esc(sourceText(Object.assign({}, m, { playerBId: null }), 'B').replace('En attente du ', ''))}.</p>` : ''}
+        ${ready ? `
+          ${scoreRow('A', m.playerAId, r ? r.scoreA : null)}
+          ${scoreRow('B', m.playerBId, r ? r.scoreB : null)}
+          <p class="error-text" id="scoreError" role="alert"></p>
+          <button type="submit" class="btn btn-primary btn-big">${m.result ? 'Corriger le résultat' : 'Valider le score'}</button>
+          <details><summary>Forfait, effacement</summary>
+            <div class="btn-row">
+              <button type="button" class="btn btn-danger" data-action="forfeit" data-id="${m.playerAId}">Forfait de ${esc(pname(m.playerAId))}</button>
+              <button type="button" class="btn btn-danger" data-action="forfeit" data-id="${m.playerBId}">Forfait de ${esc(pname(m.playerBId))}</button>
+              ${m.result ? '<button type="button" class="btn btn-danger" data-action="clear-result">Effacer le résultat</button>' : ''}
+            </div>
+          </details>
+          ${!m.result ? `<div class="inline"><label for="courtSelect" class="small"><b>Terrain</b></label>
+            <select id="courtSelect" style="max-width:200px"><option value="">— aucun —</option>${courtOptions}</select>
+            <button type="button" class="btn btn-small" data-action="dialog-assign">Affecter</button>
+            ${m.courtId ? '<button type="button" class="btn btn-small" data-action="dialog-unassign">Libérer le terrain</button>' : ''}</div>` : ''}
+        ` : `<p>Ce match attend le résultat de ses matchs sources. Aucun adversaire n'est désigné à l'avance.</p>`}
+      </form>`;
+  }
+
+  function submitScore() {
+    const m = state.matches.find(x => x.id === ui.dialogMatchId);
+    const a = $('#scoreA').value.trim(), b = $('#scoreB').value.trim();
+    const err = E.validateScore(state, m, a === '' ? '' : Number(a), b === '' ? '' : Number(b));
+    if (err) { $('#scoreError').textContent = err; return; }
+    const res = run(o => E.setResult(state, m.id, { scoreA: Number(a), scoreB: Number(b) }, o), 'Score enregistré');
+    if (res) closeDialog();
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Exports
+   * ------------------------------------------------------------------ */
+  function slug(s) { return E.nameKey(s).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'tournoi'; }
+
+  function download(filename, content, type) {
+    const blob = content instanceof Blob ? content : new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  function currentSVGString() {
+    const svg = $('#bracketScroll svg');
+    if (!svg) return null;
+    const clone = svg.cloneNode(true);
+    const vb = svg.viewBox.baseVal;
+    clone.setAttribute('width', vb.width); clone.setAttribute('height', vb.height);
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(clone);
+  }
+
+  function exportPNG() {
+    const svgText = currentSVGString();
+    if (!svgText) return;
+    const svg = $('#bracketScroll svg');
+    const vb = svg.viewBox.baseVal;
+    const img = new Image();
+    const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
+    img.onload = () => {
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = vb.width * scale; canvas.height = vb.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(b => { if (b) download(slug(state.tournament.name) + '-tableau-' + ui.division + '.png', b); else toast('Export PNG impossible dans ce navigateur.', true); }, 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); toast('Export PNG impossible : utilisez l\'export SVG.', true); };
+    img.src = url;
+  }
+
+  function printLandscape() {
+    const style = document.createElement('style');
+    style.textContent = '@page { size: landscape; }';
+    document.head.appendChild(style);
+    window.print();
+    setTimeout(() => style.remove(), 1000);
+  }
+
+  function requestFs(el) {
+    if (!el) return;
+    if (document.fullscreenElement) { document.exitFullscreen(); return; }
+    if (el.requestFullscreen) el.requestFullscreen().catch(() => toast('Plein écran indisponible.', true));
+    else toast('Plein écran indisponible sur cet appareil.', true);
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Gestion des tournois
+   * ------------------------------------------------------------------ */
+  function newTournament() {
+    state = E.createTournament({ name: 'Tournoi du ' + new Date().toLocaleDateString('fr-FR') });
+    ui.tab = 'config'; ui.division = null; ui.partitionKey = null;
+    commit(state);
+  }
+
+  function switchTournament(id) {
+    const s = Store.load(id);
+    if (!s) { toast('Impossible de charger ce tournoi.', true); render(); return; }
+    state = s; ui.division = null; ui.partitionKey = null; ui.externalChange = false;
+    saveUI(); render();
+  }
+
+  function importJSON(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      let s;
+      try { s = E.deserialize(String(reader.result)); }
+      catch (e) { toast('Import impossible : ' + e.message, true); return; }
+      const exists = Store.list().some(x => x.id === s.tournament.id);
+      if (exists && !window.confirm('Un tournoi avec le même identifiant existe déjà (« ' + s.tournament.name + ' »).\nOK = le remplacer par le fichier importé ; Annuler = importer comme copie.')) {
+        s.tournament.id = s.tournament.id + '-copie-' + Date.now().toString(36);
+        s.tournament.name += ' (copie)';
+      }
+      state = s; ui.division = null; ui.partitionKey = null;
+      commit(state);
+      toast('Tournoi importé.');
+    };
+    reader.onerror = () => toast('Lecture du fichier impossible.', true);
+    reader.readAsText(file);
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Événements (délégation)
+   * ------------------------------------------------------------------ */
+  const actions = {
+    'tab': el => { ui.tab = el.dataset.tab; saveUI(); render(); $('#view').focus({ preventScroll: true }); window.scrollTo(0, 0); },
+    'new-tournament': () => newTournament(),
+    'new-seed': () => run(() => E.updateInfo(state, { seed: E.randomSeed() }), 'Nouvelle graine'),
+    'step': el => {
+      const key = el.dataset.setting;
+      run(() => E.updateSettings(state, { [key]: state.tournament.settings[key] + Number(el.dataset.delta) }));
+    },
+    'save-players': () => {
+      const text = $('#playersText').value;
+      run(() => E.setPlayers(state, text), 'Liste enregistrée');
+    },
+    'demo-players': () => {
+      const n = Number(window.prompt('Nombre de joueurs fictifs à générer (2 à 64) :', '24'));
+      if (!(n >= 2 && n <= 64)) return;
+      if (state.players.length && !window.confirm('Remplacer la liste actuelle par ' + n + ' joueurs fictifs ?')) return;
+      const names = Array.from({ length: n }, (_, i) => 'Joueur ' + String(i + 1).padStart(2, '0'));
+      run(() => E.setPlayers(state, names), n + ' joueurs fictifs ajoutés');
+    },
+    'start': () => {
+      const res = run(() => E.startTournament(state), 'Tournoi démarré');
+      if (res) { ui.tab = state.rounds.length ? 'swiss' : 'brackets'; saveUI(); render(); }
+    },
+    'next-round': () => run(() => E.generateNextSwissRound(state), 'Nouvelle ronde générée'),
+    'open-match': el => openMatch(el.dataset.id),
+    'close-dialog': () => closeDialog(),
+    'score-step': el => {
+      const input = $('#score' + el.dataset.side);
+      input.value = Math.max(0, (Number(input.value) || 0) + Number(el.dataset.delta));
+    },
+    'forfeit': el => {
+      if (!window.confirm('Déclarer ' + pname(el.dataset.id) + ' forfait pour ce match ?')) return;
+      if (run(o => E.setResult(state, ui.dialogMatchId, { forfeitBy: el.dataset.id }, o), 'Forfait enregistré')) closeDialog();
+    },
+    'clear-result': () => {
+      if (!window.confirm('Effacer le résultat de ce match ?')) return;
+      if (run(o => E.clearResult(state, ui.dialogMatchId, o), 'Résultat effacé')) closeDialog();
+    },
+    'dialog-assign': () => {
+      const c = $('#courtSelect').value;
+      if (!c) { run(() => E.unassignCourt(state, ui.dialogMatchId)); return; }
+      run(() => E.assignCourt(state, ui.dialogMatchId, c), 'Match lancé sur ' + courtLabel(c));
+    },
+    'dialog-unassign': () => run(() => E.unassignCourt(state, ui.dialogMatchId), 'Terrain libéré'),
+    'assign': el => run(() => E.assignCourt(state, el.dataset.id, el.dataset.court), 'Match lancé'),
+    'auto-assign': () => run(() => E.autoAssignCourts(state), 'Terrains affectés'),
+    'gym-toggle': () => { ui.gym = !ui.gym; saveUI(); render(); },
+    'fullscreen-courts': () => requestFs($('#view')),
+    'division': el => { ui.division = el.dataset.id; saveUI(); render(); },
+    'partition': el => { ui.partitionKey = el.value; render(); },
+    'freeze': () => {
+      const { sizes } = currentPartition(state.players.length);
+      const desc = E.describePartition(sizes);
+      const msg = 'Figer les têtes de série ?\n\nDivisions : ' + desc.divisions.map(d => d.name + ' = places ' + d.rankStart + '-' + d.rankEnd + ' (' + (d.format === 'pool' ? 'poule' : 'tableau') + ')').join(', ') +
+        '\n' + desc.total + ' matchs de classement.\n\n' + desc.warnings.join('\n') + '\n\nLe brassage ne pourra plus être modifié sans supprimer les tableaux.';
+      if (!window.confirm(msg)) return;
+      const res = run(() => E.freezeDivisions(state, sizes), 'Tableaux générés');
+      if (res) { ui.division = state.divisions[0].id; saveUI(); render(); }
+    },
+    'reopen-swiss': () => {
+      const played = state.matches.filter(m => m.phase === 'final' && m.result).length;
+      if (!window.confirm('Rouvrir le brassage supprimera les ' + state.divisions.length + ' division(s) et ' + played + ' résultat(s) de tableau. Continuer ?')) return;
+      run(() => E.reopenSwiss(state), 'Brassage rouvert');
+    },
+    'zoom': el => { ui.zoom = Math.min(2.5, Math.max(0.3, Math.round((ui.zoom + Number(el.dataset.delta)) * 100) / 100)); saveUI(); render(); },
+    'zoom-fit': () => {
+      const sc = $('#bracketScroll'), svg = sc && sc.querySelector('svg');
+      if (!svg) return;
+      ui.zoom = Math.max(0.3, Math.min(2.5, Math.floor((sc.clientWidth - 4) / svg.viewBox.baseVal.width * 100) / 100));
+      saveUI(); render();
+    },
+    'zoom-reset': () => { ui.zoom = 1; saveUI(); render(); const sc = $('#bracketScroll'); if (sc) { sc.scrollLeft = 0; sc.scrollTop = 0; } },
+    'fullscreen': () => requestFs($('#bracketScroll')),
+    'export-svg': () => { const s = currentSVGString(); if (s) download(slug(state.tournament.name) + '-tableau-' + ui.division + '.svg', s, 'image/svg+xml'); },
+    'export-png': () => exportPNG(),
+    'print-landscape': () => printLandscape(),
+    'print': () => window.print(),
+    'export-csv': () => download(slug(state.tournament.name) + '-classement.csv', E.standingsCSV(state), 'text/csv;charset=utf-8'),
+    'export-results': () => download(slug(state.tournament.name) + '-resultats.csv', E.resultsCSV(state), 'text/csv;charset=utf-8'),
+    'export-json': () => download(slug(state.tournament.name) + '-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(state, null, 1), 'application/json'),
+    'reset-matches': () => {
+      if (!window.confirm('Supprimer TOUS les matchs, rondes et tableaux de ce tournoi ? Les joueurs et paramètres sont conservés.')) return;
+      if (window.prompt('Pour confirmer, tapez REINITIALISER') !== 'REINITIALISER') { toast('Réinitialisation annulée.'); return; }
+      run(() => E.resetMatches(state), 'Matchs réinitialisés');
+    },
+    'delete-tournament': () => {
+      if (!window.confirm('Supprimer définitivement le tournoi « ' + state.tournament.name + ' » de cet appareil ?')) return;
+      if (window.prompt('Pour confirmer, tapez SUPPRIMER') !== 'SUPPRIMER') { toast('Suppression annulée.'); return; }
+      Store.remove(state.tournament.id);
+      const rest = Store.list();
+      if (rest.length) switchTournament(rest[0].id); else newTournament();
+      toast('Tournoi supprimé.');
+    },
+    'withdraw': el => {
+      const w = el.dataset.value === '1';
+      if (w && !window.confirm('Retirer ' + pname(el.dataset.id) + ' du tournoi ? Ses matchs non joués seront perdus par forfait.')) return;
+      run(() => E.setWithdrawn(state, el.dataset.id, w), w ? 'Joueur retiré' : 'Joueur réintégré');
+    },
+    'rename': el => {
+      const n = window.prompt('Nouveau nom :', pname(el.dataset.id));
+      if (n == null) return;
+      run(() => E.renamePlayer(state, el.dataset.id, n), 'Joueur renommé');
+    },
+    'add-late': () => {
+      const input = $('#lateName');
+      if (run(() => E.addLatePlayer(state, input.value), 'Joueur ajouté')) { /* rendu effectué */ }
+    },
+    'reload-external': () => { ui.externalChange = false; switchTournament(state.tournament.id); }
+  };
+
+  document.addEventListener('click', e => {
+    const el = e.target.closest('[data-action]');
+    if (!el || (el.tagName === 'INPUT' && el.type === 'radio')) return; // les boutons radio sont gérés par 'change'
+    const fn = actions[el.dataset.action];
+    if (fn) { e.preventDefault(); fn(el, e); }
+  });
+
+  document.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('g.node[data-action]')) {
+      e.preventDefault();
+      openMatch(e.target.dataset.id);
+    }
+  });
+
+  document.addEventListener('change', e => {
+    const el = e.target;
+    if (el.id === 'tournamentSelect') { switchTournament(el.value); return; }
+    if (el.id === 'importInput') { if (el.files[0]) importJSON(el.files[0]); el.value = ''; return; }
+    if (el.id === 'csvInput') {
+      const f = el.files[0]; el.value = '';
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const names = E.parseCSVNames(String(reader.result));
+        const ta = $('#playersText');
+        ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + names.join('\n');
+        $('#playersCheck').textContent = playersCheckText(ta.value) + ' — ' + names.length + ' nom(s) importé(s), pensez à enregistrer.';
+      };
+      reader.readAsText(f);
+      return;
+    }
+    if (el.dataset.action === 'partition') { ui.partitionKey = el.value; render(); return; }
+    if (el.id === 'customSizes') { ui.customSizes = el.value; ui.partitionKey = 'custom'; render(); return; }
+    if (el.dataset.info) { run(() => E.updateInfo(state, { [el.dataset.info]: el.value })); return; }
+    if (el.dataset.setting) {
+      const v = el.type === 'checkbox' ? el.checked : el.value;
+      run(() => E.updateSettings(state, { [el.dataset.setting]: v }));
+    }
+  });
+
+  document.addEventListener('input', e => {
+    if (e.target.id === 'playersText') $('#playersCheck').textContent = playersCheckText(e.target.value);
+  });
+
+  document.addEventListener('submit', e => {
+    if (e.target.id === 'matchForm') { e.preventDefault(); submitScore(); }
+  });
+
+  $('#matchDialog').addEventListener('close', () => { ui.dialogMatchId = null; });
+  $('#matchDialog').addEventListener('click', e => { if (e.target.id === 'matchDialog') closeDialog(); });
+
+  window.addEventListener('storage', e => {
+    if (state && e.key === keyT(state.tournament.id)) { ui.externalChange = true; renderBanner(); }
+    if (e.key === KEY_INDEX) renderSwitcher();
+  });
+
+  /* ------------------------------------------------------------------ *
+   * Démarrage
+   * ------------------------------------------------------------------ */
+  (function init() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(KEY_UI) || '{}'); } catch (e) { /* ignore */ }
+    const list = Store.list();
+    const id = saved.currentId && list.some(x => x.id === saved.currentId) ? saved.currentId : (list[0] && list[0].id);
+    state = id ? Store.load(id) : null;
+    if (!state) { newTournament(); return; }
+    if (!TABS.some(t => t.id === ui.tab)) ui.tab = 'config';
+    render();
+  })();
+
+  // Exposé pour les tests de parcours (lecture seule).
+  window.__tournoi = { getState: () => state };
+})();
+
+</script>
+</body>
+</html>
