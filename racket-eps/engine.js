@@ -177,6 +177,7 @@
       gap: clampInt(opts.gap, 1, 50, 3),
       legs: opts.legs === 2 || opts.legs === '2' ? 2 : 1,
       permutation: opts.permutation === 'none' ? 'none' : 'swap',
+      tiebreak: TIEBREAKS[opts.tiebreak] ? opts.tiebreak : 'h2h-diff-pf',
       k: c.k != null ? c.k : 32,
       byes: [], moves: [], phase: mode === 'reclass' ? 'brassage' : null, divisions: []
     };
@@ -568,17 +569,70 @@
   /* ------------------------------------------------------------------ *
    * Montante-descendante
    * ------------------------------------------------------------------ */
-  function groupRanking(s, group, round) {
-    const ms = s.matches.filter(m => m.round === round && m.done && group.includes(m.a) && group.includes(m.b));
-    const st = group.map((id, i) => ({ id, i, w: 0, d: 0, pf: 0 }));
-    const get = id => st.find(x => x.id === id);
+  /*
+   * Départages configurables des groupes (poules, montante-descendante, poules de reclassement).
+   * Toujours : victoires d'abord. Puis, dans l'ordre choisi :
+   *   h2h  = confrontation directe : victoires dans les matchs entre les seuls ex aequo
+   *          (mini-classement si 3 ex aequo ou plus) ;
+   *   diff = différence de points ; pf = points marqués.
+   * Chaque critère n'est appliqué qu'aux élèves encore à égalité ; en dernier recours, l'ordre de
+   * départ du groupe (placement validé) départage de façon stable.
+   * Les anciennes séances (sans réglage) gardent le départage de la V1 : différence puis points.
+   */
+  const TIEBREAKS = {
+    'h2h-diff-pf': { label: 'Confrontation directe, puis différence, puis points marqués', order: ['h2h', 'diff', 'pf'] },
+    'diff-pf-h2h': { label: 'Différence, puis points marqués, puis confrontation directe', order: ['diff', 'pf', 'h2h'] },
+    'diff-pf': { label: 'Différence, puis points marqués', order: ['diff', 'pf'] }
+  };
+  const CRIT_LABEL = { wins: 'victoires', h2h: 'confrontation directe', diff: 'différence de points', pf: 'points marqués', pos: 'ordre de départ' };
+
+  function tiebreakOrder(s) {
+    return (TIEBREAKS[s.tiebreak] || TIEBREAKS['diff-pf']).order;
+  }
+
+  function rankGroup(s, ids, filter) {
+    const ms = s.matches.filter(m => m.done && ids.includes(m.a) && ids.includes(m.b) && (!filter || filter(m)));
+    const st = new Map(ids.map((id, i) => [id, { id, pos: i, played: 0, wins: 0, losses: 0, pf: 0, pa: 0, decidedBy: null }]));
     ms.forEach(m => {
-      const w = winnerOf(m);
-      if (w) get(w).w++;
-      if (!m.forfeit) { get(m.a).d += m.sa - m.sb; get(m.b).d += m.sb - m.sa; get(m.a).pf += m.sa; get(m.b).pf += m.sb; }
+      const w = winnerOf(m), l = loserOf(m);
+      if (!w) return;
+      st.get(m.a).played++; st.get(m.b).played++;
+      st.get(w).wins++; st.get(l).losses++;
+      if (!m.forfeit) { st.get(m.a).pf += m.sa; st.get(m.a).pa += m.sb; st.get(m.b).pf += m.sb; st.get(m.b).pa += m.sa; }
     });
-    // Victoires, différence, points marqués, puis ordre d'arrivée sur le terrain (stable).
-    return st.sort((a, b) => (b.w - a.w) || (b.d - a.d) || (b.pf - a.pf) || (a.i - b.i)).map(x => x.id);
+    const key = (crit, x, group) => {
+      if (crit === 'wins') return x.wins;
+      if (crit === 'diff') return x.pf - x.pa;
+      if (crit === 'pf') return x.pf;
+      if (crit === 'h2h') {
+        const set = new Set(group.map(g => g.id));
+        return ms.filter(m => set.has(m.a) && set.has(m.b) && winnerOf(m) === x.id).length;
+      }
+      return -x.pos;
+    };
+    // decidedBy = critère qui sépare un élève de celui classé juste devant lui.
+    const out = [];
+    (function split(group, crits) {
+      if (group.length === 1) { out.push(group[0]); return; }
+      if (!crits.length) {
+        group.sort((a, b) => a.pos - b.pos).forEach((x, i) => { if (i > 0) x.decidedBy = 'pos'; out.push(x); });
+        return;
+      }
+      const c = crits[0];
+      const buckets = new Map();
+      group.forEach(x => { const k = key(c, x, group); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(x); });
+      Array.from(buckets.keys()).sort((a, b) => b - a).forEach((k, idx) => {
+        const start = out.length;
+        split(buckets.get(k), crits.slice(1));
+        if (idx > 0) out[start].decidedBy = c;
+      });
+    })(Array.from(st.values()), ['wins'].concat(tiebreakOrder(s)));
+    out.forEach((x, i) => { x.rank = i + 1; x.diff = x.pf - x.pa; x.decidedLabel = CRIT_LABEL[x.decidedBy] || ''; });
+    return out;
+  }
+
+  function groupRanking(s, group, round) {
+    return rankGroup(s, group, m => m.round === round).map(x => x.id);
   }
 
   function generateLadderMatches(s) {
@@ -816,7 +870,7 @@
       if (d.format === 'bracket') {
         ms.filter(m => m.final && m.done).forEach(m => { places.set(winnerOf(m), m.places[0]); places.set(loserOf(m), m.places[0] + 1); });
       } else if (ms.every(m => m.done)) {
-        const sub = sessionStandings({ students: [], sessions: [] }, Object.assign({}, s, { positions: d.ids, byes: [] }), m => m.division === d.name);
+        const sub = rankGroup(s, d.ids, m => m.division === d.name);
         sub.forEach((x, i) => places.set(x.id, d.start + i));
       }
     });
@@ -967,6 +1021,86 @@
     return { ok: true, added, skipped };
   }
 
+  /* ------------------------------------------------------------------ *
+   * Classe exemple (données FICTIVES, pour tester l'application)
+   * ------------------------------------------------------------------ *
+   * Élèves nommés par des pseudonymes d'animaux (aucun nom réel). Les séances simulées passent par
+   * le vrai moteur (appel, placement, matchs, terrains, clôture) : seuls les scores sont tirés au
+   * hasard, de façon reproductible (graine), selon un « niveau » caché pour que l'Elo se différencie.
+   * La classe porte demo: true et l'interface l'indique partout.
+   */
+  const DEMO_NAMES = ['Albatros', 'Bison', 'Castor', 'Dauphin', 'Écureuil', 'Faucon', 'Gazelle', 'Hérisson', 'Ibis', 'Jaguar',
+    'Koala', 'Lynx', 'Marmotte', 'Narval', 'Ocelot', 'Panda', 'Quokka', 'Renard', 'Suricate', 'Tapir', 'Urubu', 'Vison',
+    'Wapiti', 'Xérus', 'Yack', 'Zèbre', 'Alpaga', 'Blaireau', 'Caribou', 'Dingo', 'Émeu', 'Fennec', 'Gorille', 'Hibou',
+    'Impala', 'Jabiru', 'Kiwi', 'Loutre', 'Manchot', 'Mouflon'];
+  const DEMO_FORMATS = [
+    { mode: 'pools', groupSize: 4 },
+    { mode: 'swiss', rounds: 3 },
+    { mode: 'ladder', ladderType: 'group', groupSize: 4, move: 1, rounds: 3 },
+    { mode: 'reclass', groupSize: 4 },
+    { mode: 'ladder', ladderType: 'single', rounds: 4 },
+    { mode: 'challenge', gap: 3 }
+  ];
+
+  function demoRng(seed) {
+    let h = 2166136261;
+    String(seed).split('').forEach(ch => { h = Math.imul(h ^ ch.charCodeAt(0), 16777619); });
+    let a = h >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function createDemoClass(opts) {
+    opts = opts || {};
+    const n = clampInt(opts.students, 4, 40, 24);
+    const nSessions = clampInt(opts.sessions, 0, 12, 3);
+    const courts = clampInt(opts.courts, 1, 30, 6);
+    const rand = demoRng(opts.seed || 'classe-exemple');
+    const today = opts.today ? new Date(opts.today) : new Date();
+    const c = { id: uid(), name: opts.name || 'Classe exemple (fictive)', sport: 'Badminton', courts, k: 32, initialElo: 1000, students: [], sessions: [], demo: true };
+    addStudents(c, DEMO_NAMES.slice(0, n).map((x, i) => (i < DEMO_NAMES.length ? x : 'Élève ' + (i + 1))));
+    const level = {};
+    c.students.forEach(p => { level[p.id] = rand(); });
+    const play = (s, m) => {
+      // Le plus « fort » gagne plus souvent (probabilité logistique), score sur 11.
+      const pA = 1 / (1 + Math.exp(-(level[m.a] - level[m.b]) * 6));
+      const aWins = rand() < pA, lo = Math.floor(rand() * 10);
+      return recordResult(c, s, m.id, aWins ? { sa: 11, sb: lo } : { sa: lo, sb: 11 }, { confirm: true });
+    };
+    for (let k = 0; k < nSessions; k++) {
+      const f = DEMO_FORMATS[k % DEMO_FORMATS.length];
+      const date = new Date(today.getTime() - (nSessions - k) * 7 * 864e5).toISOString().slice(0, 10);
+      const s = createSession(c, Object.assign({ date }, f)).session;
+      // 0 à 2 absents tirés au hasard (jamais au point de passer sous 4 présents)
+      const abs = Math.min(Math.floor(rand() * 3), Math.max(0, n - 4));
+      for (let a = 0; a < abs; a++) {
+        const present = s.positions;
+        setAbsent(c, s, present[Math.floor(rand() * present.length)], true);
+      }
+      startSession(c, s);
+      for (let guard = 0; guard < 2000; guard++) {
+        const m = s.matches.find(x => x.court && !x.done) || s.matches.find(x => !x.done && x.a && x.b);
+        if (m) { play(s, m); continue; }
+        if (canNextRound(s).ok) { nextRound(c, s); continue; }
+        if (s.mode === 'reclass' && canBuildClassement(s).ok) { buildClassement(c, s, proposePartitions(s.positions.length)[0].sizes); continue; }
+        if (s.mode === 'challenge' && s.matches.length < s.positions.length) {
+          const order = challengeOrder(s);
+          const i = 1 + Math.floor(rand() * (order.length - 1));
+          const j = Math.max(0, i - 1 - Math.floor(rand() * Math.min(s.gap, i)));
+          if (!addChallenge(c, s, order[i], order[j]).ok) break;
+          continue;
+        }
+        break;
+      }
+      closeSession(c, s);
+    }
+    return c;
+  }
+
   function renameStudent(c, id, name) {
     name = String(name || '').replace(/\s+/g, ' ').trim();
     if (!name) return fail('Nom vide.');
@@ -983,10 +1117,10 @@
     activeSession, createSession, presentIds, proposePlacement, setAbsent, moveToGroup, shiftPosition, placementWarnings,
     balancedGroups, groupCount, makeGroups, startSession, roundRobin, autoAssign, matchState,
     recordResult, clearResult, resolve, sessionStandings, minCostPerfectMatching,
-    nextRound, canNextRound, groupRanking, challengeOrder, addChallenge, removeMatch,
+    nextRound, canNextRound, groupRanking, rankGroup, TIEBREAKS, challengeOrder, addChallenge, removeMatch,
     divisionFormat, validatePartition, describePartition, proposePartitions, seedOrder, brassageRanking,
     canBuildClassement, buildClassement, reclassPlaces,
     canClose, closeSession, cancelSession, reopenSession,
-    emptyDB, migrate, validateDB, parseDB, addStudents, renameStudent, nameKey
+    emptyDB, migrate, validateDB, parseDB, addStudents, renameStudent, nameKey, createDemoClass, DEMO_NAMES
   };
 });

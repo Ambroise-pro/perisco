@@ -367,3 +367,63 @@ test('Élèves : doublons (casse/accents), renommage sans changer l\'identifiant
   assert.equal(c.students[2].id, id);
   assert.equal(R.renameStudent(c, id, 'tom').ok, false);
 });
+
+test('Départage par confrontation directe (configurable) dans une poule', () => {
+  const mk = tiebreak => {
+    const c = makeClass(4, 2);
+    const s = newSession(c, { mode: 'pools', groupSize: 4, tiebreak });
+    R.startSession(c, s);
+    const [A, B, C, D] = s.groups[0];
+    const res = { [A + B]: [11, 9], [A + C]: [2, 11], [A + D]: [11, 0], [B + C]: [11, 0], [B + D]: [11, 0], [C + D]: [0, 11] };
+    s.matches.forEach(m => {
+      const k = res[m.a + m.b] ? m.a + m.b : m.b + m.a, r = res[k];
+      const flip = !res[m.a + m.b];
+      R.recordResult(c, s, m.id, flip ? { sa: r[1], sb: r[0] } : { sa: r[0], sb: r[1] });
+    });
+    return { rk: R.rankGroup(s, s.groups[0]), A, B };
+  };
+  // A et B : 2 victoires ; B a la meilleure différence (+31 contre +1), mais A a battu B.
+  const h = mk('h2h-diff-pf');
+  assert.deepEqual(h.rk.slice(0, 2).map(x => x.id), [h.A, h.B]);
+  assert.equal(h.rk[1].decidedBy, 'h2h');
+  const d = mk('diff-pf');
+  assert.deepEqual(d.rk.slice(0, 2).map(x => x.id), [d.B, d.A]);
+  assert.equal(d.rk[1].decidedBy, 'diff');
+});
+
+test('Confrontation directe circulaire (3 ex aequo) : critère suivant appliqué', () => {
+  const c = makeClass(3, 1);
+  const s = newSession(c, { mode: 'pools', groupSize: 3, tiebreak: 'h2h-diff-pf' });
+  R.startSession(c, s);
+  const [A, B, C] = s.groups[0];
+  const score = { [A + B]: [11, 1], [B + C]: [11, 9], [C + A]: [11, 9] };
+  s.matches.forEach(m => {
+    const r = score[m.a + m.b] || score[m.b + m.a].slice().reverse();
+    R.recordResult(c, s, m.id, { sa: r[0], sb: r[1] });
+  });
+  const rk = R.rankGroup(s, s.groups[0]);
+  // 1 victoire chacun, confrontation directe 1-1-1 → différence : A +8, C 0, B −8
+  assert.deepEqual(rk.map(x => x.id), [A, C, B]);
+  assert.equal(rk[1].decidedBy, 'diff');
+});
+
+test('Classe exemple : élèves fictifs, séances simulées valides, reproductible', () => {
+  const c = R.createDemoClass({ students: 24, sessions: 6, seed: 'graine', today: '2026-11-08' });
+  assert.equal(c.demo, true);
+  assert.equal(c.students.length, 24);
+  assert.ok(c.students.every(p => R.DEMO_NAMES.includes(p.name)), 'pseudonymes fictifs uniquement');
+  assert.equal(c.sessions.length, 6);
+  assert.deepEqual(c.sessions.map(s => s.mode), ['pools', 'swiss', 'ladder', 'reclass', 'ladder', 'challenge']);
+  assert.ok(c.sessions.every(s => s.status === 'closed' && s.matches.length && s.matches.every(m => m.done)));
+  assert.ok(c.sessions.every((s, i) => i === 0 || s.date > c.sessions[i - 1].date), 'dates chronologiques');
+  const total = R.ranks(c).reduce((a, p) => a + p.elo, 0);
+  assert.ok(Math.abs(total - 24000) < 1e-6);
+  const db = R.emptyDB(); db.classes.push(c);
+  assert.ok(R.validateDB(JSON.parse(JSON.stringify(db))).ok);
+  // Même graine → mêmes résultats ; classe vierge possible
+  const c2 = R.createDemoClass({ students: 24, sessions: 6, seed: 'graine', today: '2026-11-08' });
+  assert.deepEqual(R.ranks(c2).map(p => [p.name, p.elo]), R.ranks(c).map(p => [p.name, p.elo]));
+  const empty = R.createDemoClass({ students: 5, sessions: 0 });
+  assert.equal(empty.sessions.length, 0);
+  assert.equal(empty.students.length, 5);
+});

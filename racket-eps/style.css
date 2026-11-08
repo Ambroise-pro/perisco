@@ -81,3 +81,30 @@ h3{font-size:16px}
 .toast.show{opacity:1}
 .toast.err{background:#ffb3bd}
 @media print{body{background:#fff;color:#000}.nav,.top .row,.actions,.btn,footer,.toast{display:none!important}.panel{border:1px solid #999;background:#fff;color:#000}}
+/* Graphiques */
+.chart{position:relative;margin:6px 0 10px;max-width:760px}
+.chart svg{display:block;width:100%;height:auto}
+.chart:focus-visible{outline:3px solid #f5c04a;outline-offset:4px;border-radius:6px}
+.chart .tip{position:absolute;pointer-events:none;background:#0b1a28;border:1px solid #3a5569;border-radius:8px;padding:6px 10px;min-width:140px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.chart .tip-v{display:block;font-size:15px;color:#f2f7fc}
+.chart .tip-l{display:block;font-size:12px;color:#a9bdcb}
+/* Mode projection */
+body.projection .top,body.projection .nav,body.projection footer,body.projection #banner{display:none}
+body.projection .app{max-width:none;padding:2vw}
+body.projection h2{font-size:clamp(20px,2.4vw,36px);margin:2vw 0 1vw;color:#9fd8c8}
+.proj-head{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:clamp(22px,2.8vw,44px);font-weight:800}
+.proj-prog{color:#96aabd;font-weight:600}
+.proj-courts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:1.5vw;margin-top:1.5vw}
+.proj-court{background:#102436;border:3px solid #274157;border-radius:18px;padding:1.4vw;min-height:150px}
+.proj-court.busy{background:#146d62;border-color:#55b9a7}
+.proj-court.busy:nth-child(even){background:#1c587c;border-color:#5499c0}
+.proj-t{font-size:clamp(18px,1.8vw,30px);font-weight:700;opacity:.9}
+.proj-vs{font-size:clamp(26px,3.2vw,54px);font-weight:800;line-height:1.15;overflow-wrap:anywhere}
+.proj-vs span{display:block;font-size:.45em;font-weight:600;opacity:.8;margin:.2em 0}
+.proj-free{font-size:clamp(20px,2.2vw,36px);color:#96aabd}
+.proj-queue{font-size:clamp(20px,2.4vw,40px);font-weight:700;columns:2 320px;margin:0;padding-left:1.4em}
+.proj-groups{font-size:clamp(18px,2vw,32px);display:grid;gap:.5em}
+.proj-empty{font-size:clamp(28px,4vw,64px);text-align:center;padding:20vh 0;color:#96aabd}
+.proj-tools{position:fixed;right:12px;bottom:12px;display:flex;gap:8px;opacity:.35}
+.proj-tools:hover,.proj-tools:focus-within{opacity:1}
+@media print{.proj-tools{display:none}}
