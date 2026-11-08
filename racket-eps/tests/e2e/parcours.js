@@ -178,12 +178,36 @@ async function migration(browser) {
   await ctx.close();
 }
 
+async function demoClass(browser) {
+  console.log('\n— Classe exemple');
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  const answers = ['24', '4'];
+  page.on('dialog', d => d.type() === 'prompt' ? d.accept(answers.shift()) : d.accept());
+  await page.goto(FILE);
+  await page.click('.top [data-action="demo-class"]');
+  const info = await page.evaluate(() => { const c = window.__racket.getDB().classes[0]; return { n: c.students.length, s: c.sessions.length, demo: c.demo, closed: c.sessions.every(x => x.status === 'closed') }; });
+  check(info.demo && info.n === 24 && info.s === 4 && info.closed, 'classe exemple : 24 élèves fictifs, 4 séances simulées clôturées');
+  check(/données fictives/.test(await page.innerText('#view')), 'classe signalée comme fictive');
+  check(await page.$$eval('#eloChart circle', n => n.length) === 4, 'graphiques alimentés par les séances simulées');
+  await page.screenshot({ path: path.join(OUT, 'exemple-classement.png'), fullPage: true });
+  await page.click('[data-tab="session"]');
+  await page.click('[data-action="create-session"]');
+  await page.click('[data-action="start-session"]');
+  check(await page.$$eval('.match.st-playing', n => n.length) === 6, 'nouvelle séance possible sur la classe exemple (6 terrains occupés)');
+  check(errors.length === 0, 'aucune erreur JavaScript');
+  await ctx.close();
+}
+
 (async () => {
   const browser = await chromium.launch();
   try {
     await scenario(browser, 'ordinateur', { viewport: { width: 1280, height: 900 } });
     await scenario(browser, 'telephone', devices['iPhone 13']);
     await migration(browser);
+    await demoClass(browser);
     console.log('\nParcours réussis. Captures : ' + OUT);
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exit(1); });

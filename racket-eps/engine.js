@@ -1021,6 +1021,86 @@
     return { ok: true, added, skipped };
   }
 
+  /* ------------------------------------------------------------------ *
+   * Classe exemple (données FICTIVES, pour tester l'application)
+   * ------------------------------------------------------------------ *
+   * Élèves nommés par des pseudonymes d'animaux (aucun nom réel). Les séances simulées passent par
+   * le vrai moteur (appel, placement, matchs, terrains, clôture) : seuls les scores sont tirés au
+   * hasard, de façon reproductible (graine), selon un « niveau » caché pour que l'Elo se différencie.
+   * La classe porte demo: true et l'interface l'indique partout.
+   */
+  const DEMO_NAMES = ['Albatros', 'Bison', 'Castor', 'Dauphin', 'Écureuil', 'Faucon', 'Gazelle', 'Hérisson', 'Ibis', 'Jaguar',
+    'Koala', 'Lynx', 'Marmotte', 'Narval', 'Ocelot', 'Panda', 'Quokka', 'Renard', 'Suricate', 'Tapir', 'Urubu', 'Vison',
+    'Wapiti', 'Xérus', 'Yack', 'Zèbre', 'Alpaga', 'Blaireau', 'Caribou', 'Dingo', 'Émeu', 'Fennec', 'Gorille', 'Hibou',
+    'Impala', 'Jabiru', 'Kiwi', 'Loutre', 'Manchot', 'Mouflon'];
+  const DEMO_FORMATS = [
+    { mode: 'pools', groupSize: 4 },
+    { mode: 'swiss', rounds: 3 },
+    { mode: 'ladder', ladderType: 'group', groupSize: 4, move: 1, rounds: 3 },
+    { mode: 'reclass', groupSize: 4 },
+    { mode: 'ladder', ladderType: 'single', rounds: 4 },
+    { mode: 'challenge', gap: 3 }
+  ];
+
+  function demoRng(seed) {
+    let h = 2166136261;
+    String(seed).split('').forEach(ch => { h = Math.imul(h ^ ch.charCodeAt(0), 16777619); });
+    let a = h >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function createDemoClass(opts) {
+    opts = opts || {};
+    const n = clampInt(opts.students, 4, 40, 24);
+    const nSessions = clampInt(opts.sessions, 0, 12, 3);
+    const courts = clampInt(opts.courts, 1, 30, 6);
+    const rand = demoRng(opts.seed || 'classe-exemple');
+    const today = opts.today ? new Date(opts.today) : new Date();
+    const c = { id: uid(), name: opts.name || 'Classe exemple (fictive)', sport: 'Badminton', courts, k: 32, initialElo: 1000, students: [], sessions: [], demo: true };
+    addStudents(c, DEMO_NAMES.slice(0, n).map((x, i) => (i < DEMO_NAMES.length ? x : 'Élève ' + (i + 1))));
+    const level = {};
+    c.students.forEach(p => { level[p.id] = rand(); });
+    const play = (s, m) => {
+      // Le plus « fort » gagne plus souvent (probabilité logistique), score sur 11.
+      const pA = 1 / (1 + Math.exp(-(level[m.a] - level[m.b]) * 6));
+      const aWins = rand() < pA, lo = Math.floor(rand() * 10);
+      return recordResult(c, s, m.id, aWins ? { sa: 11, sb: lo } : { sa: lo, sb: 11 }, { confirm: true });
+    };
+    for (let k = 0; k < nSessions; k++) {
+      const f = DEMO_FORMATS[k % DEMO_FORMATS.length];
+      const date = new Date(today.getTime() - (nSessions - k) * 7 * 864e5).toISOString().slice(0, 10);
+      const s = createSession(c, Object.assign({ date }, f)).session;
+      // 0 à 2 absents tirés au hasard (jamais au point de passer sous 4 présents)
+      const abs = Math.min(Math.floor(rand() * 3), Math.max(0, n - 4));
+      for (let a = 0; a < abs; a++) {
+        const present = s.positions;
+        setAbsent(c, s, present[Math.floor(rand() * present.length)], true);
+      }
+      startSession(c, s);
+      for (let guard = 0; guard < 2000; guard++) {
+        const m = s.matches.find(x => x.court && !x.done) || s.matches.find(x => !x.done && x.a && x.b);
+        if (m) { play(s, m); continue; }
+        if (canNextRound(s).ok) { nextRound(c, s); continue; }
+        if (s.mode === 'reclass' && canBuildClassement(s).ok) { buildClassement(c, s, proposePartitions(s.positions.length)[0].sizes); continue; }
+        if (s.mode === 'challenge' && s.matches.length < s.positions.length) {
+          const order = challengeOrder(s);
+          const i = 1 + Math.floor(rand() * (order.length - 1));
+          const j = Math.max(0, i - 1 - Math.floor(rand() * Math.min(s.gap, i)));
+          if (!addChallenge(c, s, order[i], order[j]).ok) break;
+          continue;
+        }
+        break;
+      }
+      closeSession(c, s);
+    }
+    return c;
+  }
+
   function renameStudent(c, id, name) {
     name = String(name || '').replace(/\s+/g, ' ').trim();
     if (!name) return fail('Nom vide.');
@@ -1041,6 +1121,6 @@
     divisionFormat, validatePartition, describePartition, proposePartitions, seedOrder, brassageRanking,
     canBuildClassement, buildClassement, reclassPlaces,
     canClose, closeSession, cancelSession, reopenSession,
-    emptyDB, migrate, validateDB, parseDB, addStudents, renameStudent, nameKey
+    emptyDB, migrate, validateDB, parseDB, addStudents, renameStudent, nameKey, createDemoClass, DEMO_NAMES
   };
 });

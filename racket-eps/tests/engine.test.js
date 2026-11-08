@@ -406,3 +406,24 @@ test('Confrontation directe circulaire (3 ex aequo) : critère suivant appliqué
   assert.deepEqual(rk.map(x => x.id), [A, C, B]);
   assert.equal(rk[1].decidedBy, 'diff');
 });
+
+test('Classe exemple : élèves fictifs, séances simulées valides, reproductible', () => {
+  const c = R.createDemoClass({ students: 24, sessions: 6, seed: 'graine', today: '2026-11-08' });
+  assert.equal(c.demo, true);
+  assert.equal(c.students.length, 24);
+  assert.ok(c.students.every(p => R.DEMO_NAMES.includes(p.name)), 'pseudonymes fictifs uniquement');
+  assert.equal(c.sessions.length, 6);
+  assert.deepEqual(c.sessions.map(s => s.mode), ['pools', 'swiss', 'ladder', 'reclass', 'ladder', 'challenge']);
+  assert.ok(c.sessions.every(s => s.status === 'closed' && s.matches.length && s.matches.every(m => m.done)));
+  assert.ok(c.sessions.every((s, i) => i === 0 || s.date > c.sessions[i - 1].date), 'dates chronologiques');
+  const total = R.ranks(c).reduce((a, p) => a + p.elo, 0);
+  assert.ok(Math.abs(total - 24000) < 1e-6);
+  const db = R.emptyDB(); db.classes.push(c);
+  assert.ok(R.validateDB(JSON.parse(JSON.stringify(db))).ok);
+  // Même graine → mêmes résultats ; classe vierge possible
+  const c2 = R.createDemoClass({ students: 24, sessions: 6, seed: 'graine', today: '2026-11-08' });
+  assert.deepEqual(R.ranks(c2).map(p => [p.name, p.elo]), R.ranks(c).map(p => [p.name, p.elo]));
+  const empty = R.createDemoClass({ students: 5, sessions: 0 });
+  assert.equal(empty.sessions.length, 0);
+  assert.equal(empty.students.length, 5);
+});

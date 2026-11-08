@@ -32,6 +32,13 @@ tests/       tests du moteur (node --test) et parcours navigateur (Playwright)
 | Ronde suisse | Appariement exact de coût minimal (revanches évitées quand c'est possible). L'exemption va en priorité à un élève qui n'en a pas eu, avec 1 point de tournoi et 0 Elo. |
 | Reclassement | Brassage en poules, puis divisions en **tableaux intégraux** (2, 4, 8, 16…) ou en poules de 3, 5 ou 6. Chaque place est attribuée une fois. Corriger un match en amont invalide les matchs en aval, après confirmation. |
 
+## Classe exemple (pour tester)
+Le bouton **Classe exemple** (en haut, ou sur l'écran d'accueil) crée une classe de 4 à 40 élèves **fictifs** (pseudonymes d'animaux, aucun nom réel). On peut y ajouter 0 à 12 séances déjà jouées.
+
+Les séances simulées passent par le vrai moteur : appel avec 0 à 2 absents, placement, matchs, terrains, clôture. Elles parcourent les 6 formats (poules, ronde suisse, montante-descendante par groupes, reclassement, montante-descendante individuelle, défi), à une semaine d'intervalle. Seuls les scores sont tirés au hasard, selon un niveau caché propre à chaque élève, pour que l'Elo et les graphiques se différencient.
+
+La classe porte la mention « données fictives » sur le tableau de bord, la liste des élèves et le classement. Elle se supprime comme n'importe quelle classe (Réglages → Supprimer).
+
 ## Départage dans les groupes
 Il s'applique aux poules, à la montante-descendante et aux poules de reclassement. On classe d'abord par victoires, puis on applique, au choix lors de la création de la séance :
 - confrontation directe, puis différence de points, puis points marqués (par défaut) ;

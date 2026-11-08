@@ -85,14 +85,16 @@
   }
 
   function welcome() {
-    return `<section class="panel"><h2>Bienvenue dans Racket EPS</h2><p>Créez une classe pour organiser vos séances, faire l'appel et suivre les classements Elo.</p><button class="btn primary" data-action="add-class">Créer ma première classe</button></section>`;
+    return `<section class="panel"><h2>Bienvenue dans Racket EPS</h2><p>Créez une classe pour organiser vos séances, faire l'appel et suivre les classements Elo.</p><div class="actions"><button class="btn primary" data-action="add-class">Créer ma première classe</button>
+      <button class="btn" data-action="demo-class">Essayer avec une classe exemple</button></div>
+      <p class="muted small">La classe exemple contient des élèves fictifs (pseudonymes d'animaux) et, si vous le souhaitez, quelques séances déjà jouées avec des résultats simulés, pour découvrir l'Elo, les graphiques et l'historique.</p></section>`;
   }
 
   function rankingTable(r, opts) {
     opts = opts || {};
     return `<div class="tablewrap"><table><thead><tr><th>Rang</th><th>Élève</th><th>Elo</th><th>Variation</th><th>Matchs</th><th>V</th><th>D</th><th>%</th><th>Diff. points</th></tr></thead><tbody>${
       r.map((p, i) => `<tr><td>${i + 1}</td><td><button class="btn linkish" data-action="student" data-id="${p.id}">${esc(p.name)}</button></td><td><b>${fmt(p.elo)}</b></td>
-        <td class="${p.lastDelta >= 0 ? 'good' : 'bad'}">${p.history.length ? (p.lastDelta >= 0 ? '+' : '') + fmt(p.lastDelta) : '—'}</td>
+        <td class="${p.lastDelta >= 0 ? 'good' : 'bad'}">${!p.history.length ? '—' : (p.history[p.history.length - 1].absent ? '<span class="muted">absent</span>' : (p.lastDelta >= 0 ? '+' : '') + fmt(p.lastDelta))}</td>
         <td>${p.played}</td><td>${p.wins}</td><td>${p.losses}</td><td>${p.played ? fmt(p.wins / p.played * 100) + ' %' : '—'}</td><td>${p.for - p.against}</td></tr>`).join('')
     }</tbody></table></div>${opts.note ? `<p class="muted small">${opts.note}</p>` : ''}`;
   }
@@ -100,15 +102,19 @@
   function dashboard(c) {
     const r = R.ranks(c), s = R.activeSession(c), closed = c.sessions.filter(x => x.status === 'closed').length;
     const status = s ? (s.status === 'setup' ? 'Appel et terrains à valider' : (s.reopened ? 'Séance rouverte pour correction' : 'Matchs en cours')) : '';
-    return `<div class="grid"><div class="stat"><b>${c.students.length}</b><small>Élèves inscrits</small></div><div class="stat"><b>${closed}</b><small>Séances clôturées</small></div><div class="stat"><b>${c.courts}</b><small>Terrains</small></div><div class="stat"><b>${c.sessions.reduce((n, x) => n + x.matches.filter(m => m.done).length, 0)}</b><small>Matchs enregistrés</small></div></div>
+    return `${demoNotice(c)}<div class="grid"><div class="stat"><b>${c.students.length}</b><small>Élèves inscrits</small></div><div class="stat"><b>${closed}</b><small>Séances clôturées</small></div><div class="stat"><b>${c.courts}</b><small>Terrains</small></div><div class="stat"><b>${c.sessions.reduce((n, x) => n + x.matches.filter(m => m.done).length, 0)}</b><small>Matchs enregistrés</small></div></div>
       <section class="panel" style="margin-top:16px"><h2>${s ? 'Séance en cours' : 'Prochaine séance'}</h2><p class="muted">${s ? `Séance ${s.seq} · ${R.MODES[s.mode]} · ${status}` : 'Préparez une séance, faites l\'appel puis validez les terrains avant de lancer les matchs.'}</p>
       <button class="btn primary" data-action="tab" data-tab="session">${s ? 'Reprendre la séance' : 'Préparer une séance'}</button></section>
       <section class="panel"><h2>Top 10 · Classement Elo</h2>${rankingTable(r.slice(0, 10))}</section>`;
   }
 
+  function demoNotice(c) {
+    return c.demo ? `<div class="notice warn" role="note"><b>Classe exemple — données fictives.</b> Élèves et résultats ont été générés pour tester l'application. Supprimez-la dans Réglages quand vous n'en avez plus besoin.</div>` : '';
+  }
+
   function students(c) {
     const st = R.computeStats(c);
-    return `<section class="panel"><h2>Gestion des élèves</h2>
+    return `${demoNotice(c)}<section class="panel"><h2>Gestion des élèves</h2>
       <div class="row"><div class="field"><label for="newStudent">Ajouter un élève</label><input id="newStudent" placeholder="Prénom N." autocomplete="off"></div><button class="btn primary" data-action="add-student">Ajouter</button></div>
       <div class="field"><label for="bulk">Importer une liste (un élève par ligne)</label><textarea id="bulk" placeholder="Prénom N.&#10;Prénom N.&#10;…"></textarea></div>
       <button class="btn" data-action="bulk-students">Importer les noms</button>
@@ -328,7 +334,7 @@
           ms.map(m => { const me = m.a === p.id; const opp = me ? m.b : m.a; const won = R.winnerOf(m) === p.id;
             return `<tr><td>${m.seq}</td><td>${esc(nameOf(c, opp))}</td><td>${m.forfeit ? 'forfait' : (me ? m.sa + ' – ' + m.sb : m.sb + ' – ' + m.sa)}</td><td class="${won ? 'good' : 'bad'}">${won ? 'Victoire' : 'Défaite'}</td></tr>`; }).join('')}</table></div></section>`;
     }
-    return `<section class="panel"><h2>Classement général Elo</h2>${rankingTable(r, { note: 'Calculé uniquement à partir des séances clôturées, dans l\'ordre chronologique. Égalités départagées par ordre alphabétique (affiché de façon stable). Variation = dernière séance clôturée. Les forfaits et exemptions ne comptent pas pour l\'Elo.' })}</section>${fiche}`;
+    return `${demoNotice(c)}<section class="panel"><h2>Classement général Elo</h2>${rankingTable(r, { note: 'Calculé uniquement à partir des séances clôturées, dans l\'ordre chronologique. Égalités départagées par ordre alphabétique (affiché de façon stable). Variation = dernière séance clôturée. Les forfaits et exemptions ne comptent pas pour l\'Elo.' })}</section>${fiche}`;
   }
 
   function history(c) {
@@ -481,6 +487,18 @@
       const c = { id: R.uid(), name: name.trim(), sport: 'Badminton', courts: 4, students: [], sessions: [], k: 32, initialElo: 1000 };
       db.classes.push(c); db.active = c.id; tab = 'students';
       save(); render();
+    },
+    'demo-class': () => {
+      const n = prompt('Classe exemple : nombre d\'élèves fictifs (4 à 40)', '24');
+      if (n == null) return;
+      const k = prompt('Nombre de séances déjà jouées à simuler (0 à 12) — 0 pour une classe vierge', '3');
+      if (k == null) return;
+      const nn = Number(n), kk = Number(k);
+      if (!(Number.isInteger(nn) && nn >= 4 && nn <= 40) || !(Number.isInteger(kk) && kk >= 0 && kk <= 12)) return toast('Valeurs invalides (4 à 40 élèves, 0 à 12 séances).', true);
+      const c = R.createDemoClass({ students: nn, sessions: kk, seed: 'exemple-' + Date.now(), name: 'Classe exemple (fictive)' + (db.classes.some(x => x.demo) ? ' ' + (db.classes.filter(x => x.demo).length + 1) : '') });
+      db.classes.push(c); db.active = c.id; tab = kk ? 'ranking' : 'dashboard'; selectedStudent = null;
+      save(); render();
+      toast('Classe exemple créée : ' + nn + ' élèves fictifs' + (kk ? ', ' + kk + ' séance(s) simulée(s)' : ''));
     },
     'add-student': () => {
       const c = cl(), v = $('newStudent').value;
