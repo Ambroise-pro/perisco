@@ -10,7 +10,8 @@ index.html   page
 engine.js    moteur pur et testé (Elo, formats, terrains, persistance) — window.RacketEngine
 app.js       interface
 style.css    styles (repris du prototype V1)
-tests/       tests du moteur (node --test) et parcours navigateur (Playwright)
+qr.js        générateur de QR codes (sans dépendance) — window.RacketQR
+tests/       tests du moteur et du générateur QR (node --test), parcours navigateur (Playwright)
 ```
 
 ## Règles métier implémentées
@@ -63,10 +64,11 @@ Contrôles appliqués au scan :
 
 Conditions :
 - les tablettes doivent ouvrir l'application par son **adresse web**, par exemple l'adresse Vercel (Réglages → QR codes) ;
-- l'aperçu caméra exige une page en `https` ;
-- la génération des QR et la lecture caméra sur tous les navigateurs s'appuient sur deux bibliothèques libres à placer dans `lib/` (voir `lib/README.md`). Sans elles :
-  - le lien de la feuille et le code texte restent disponibles ;
-  - la caméra ne lit les QR que sur les navigateurs dotés d'un lecteur intégré (`BarcodeDetector` : Chrome sur Android, ChromeOS et macOS).
+- l'aperçu caméra du mode scan exige une page en `https` ;
+- les QR codes sont dessinés par **`qr.js`**, un générateur écrit pour l'application (norme ISO/IEC 18004, mode octets UTF-8, correction d'erreur M, versions 1 à 20), sans dépendance ;
+- la **lecture** par la caméra utilise le lecteur intégré du navigateur (`BarcodeDetector` : Chrome sur Android, Chromebook, Mac). Ailleurs (iPad, Windows), on tape le code texte affiché sous le QR de la tablette.
+
+Vérification du générateur : 67 QR (versions 1 à 20, les 8 masques, accents et émojis, liens de feuille de match, codes de résultat) ont été décodés à l'identique par un décodeur indépendant (OpenCV). Les QR affichés dans l'application (fenêtre du professeur et tablette) ont aussi été décodés à partir de captures d'écran. `tests/qr.test.js` vérifie le calcul Reed-Solomon sur le vecteur de référence de la norme et fige ces sorties validées.
 
 ## Classe exemple (pour tester)
 Le bouton **Classe exemple** (en haut, ou sur l'écran d'accueil) crée une classe de 4 à 40 élèves **fictifs** (pseudonymes d'animaux, aucun nom réel). On peut y ajouter 0 à 12 séances déjà jouées.

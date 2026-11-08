@@ -272,8 +272,8 @@ async function qrFlow(browser) {
   await page.waitForSelector('#qrDialog[open]');
   const href = await page.getAttribute('#qrDialog .qr-link a', 'href');
   check(href && href.startsWith(BASE + '#f='), 'QR du match : lien vers la feuille de match (' + href.length + ' caractères)');
-  const libs = await page.evaluate(() => typeof window.qrcode === 'function');
-  check(libs ? await page.$('#qrDialog .qr-img svg') !== null : /Générateur de QR codes absent/.test(await page.innerText('#qrDialog')), libs ? 'QR code dessiné' : 'sans le générateur (lib/), lien affiché et absence signalée');
+  check(await page.$('#qrDialog .qr-img svg') !== null, 'QR code de la feuille de match dessiné (générateur qr.js)');
+  if (process.env.QR_SHOTS) await page.locator('#qrDialog .qr-img').screenshot({ path: path.join(OUT, 'qr-feuille.png') });
   await page.click('[data-action="qr-close"]');
 
   // Tablette élève
@@ -293,6 +293,11 @@ async function qrFlow(browser) {
   const code = (await t.textContent('.sheet-code')).trim();
   check(/^RE1\./.test(code), 'tablette : code de résultat affiché (' + code + ')');
   await t.screenshot({ path: path.join(OUT, 'qr-tablette-resultat.png') });
+  check(await t.$('.sheet .qr-img svg') !== null, 'tablette : QR de résultat dessiné');
+  if (process.env.QR_SHOTS) {
+    await t.locator('.sheet .qr-img').screenshot({ path: path.join(OUT, 'qr-resultat.png') });
+    fs.writeFileSync(path.join(OUT, 'qr-attendus.json'), JSON.stringify({ feuille: href, resultat: code }));
+  }
   check(await t.evaluate(() => !localStorage.getItem('racket_eps_v1')), 'la tablette n\'enregistre aucune donnée de la classe');
 
   // Mode scan sur l'appareil de l'enseignant (caméra factice)

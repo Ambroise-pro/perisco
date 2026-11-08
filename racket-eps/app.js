@@ -435,7 +435,7 @@
       <p class="muted small">Le stockage local n'est pas synchronisé entre appareils. Avant chaque enregistrement, la version précédente est gardée comme copie de secours.</p></section>
       <section class="panel"><h2>QR codes des tablettes</h2>
       <div class="field"><label for="publicUrl">Adresse web de l'application (ouverte par les tablettes)</label><input id="publicUrl" type="url" placeholder="https://…" value="${esc(db.publicUrl || '')}"></div>
-      <p class="muted small">Adresse utilisée : <b>${esc(publicBase() || 'aucune')}</b>. Laissez vide pour utiliser l'adresse de cette page${location.protocol === 'file:' ? ' — <span class="bad">ouverte en fichier local, elle n\'est pas accessible aux tablettes : indiquez l\'adresse Vercel</span>' : ''}. ${typeof window.qrcode === 'function' ? 'Générateur de QR codes : disponible.' : '<span class="bad">Générateur de QR codes absent (dossier lib/) : seuls les liens et codes texte sont affichés.</span>'} ${scanBackend() === 'none' ? '<span class="bad">Lecture de QR par la caméra indisponible sur ce navigateur : saisie du code texte uniquement.</span>' : 'Lecture caméra : ' + (scanBackend() === 'native' ? 'lecteur intégré du navigateur' : 'jsQR') + '.'}</p>
+      <p class="muted small">Adresse utilisée : <b>${esc(publicBase() || 'aucune')}</b>. Laissez vide pour utiliser l'adresse de cette page${location.protocol === 'file:' ? ' — <span class="bad">ouverte en fichier local, elle n\'est pas accessible aux tablettes : indiquez l\'adresse Vercel</span>' : ''}. ${scanBackend() === 'none' ? '<span class="bad">Ce navigateur n\'a pas de lecteur de QR intégré : en mode scan, saisissez le code texte affiché par la tablette (Chrome sur Android, Chromebook ou Mac lit les QR par la caméra).</span>' : 'Lecture des QR par la caméra : disponible (lecteur intégré du navigateur).'}</p>
       <button class="btn" data-action="save-url">Enregistrer l'adresse</button></section>
       <section class="panel"><h2>Gestion</h2><button class="btn danger" data-action="delete-class">Supprimer cette classe et ses données</button></section>`;
   }
@@ -559,16 +559,10 @@
   }
   function sheetURL(c, s, m) { return publicBase() + '#f=' + R.encodeSheet(R.sheetData(c, s, m)); }
 
-  // QR en SVG (générateur facultatif lib/qrcode-generator.js) ; null si indisponible.
+  // QR en SVG (générateur maison qr.js) ; null en cas d'échec (texte trop long).
   function qrSVG(text, size) {
-    if (typeof window.qrcode !== 'function') return null;
-    const qr = window.qrcode(0, 'M');
-    qr.addData(text);
-    qr.make();
-    const n = qr.getModuleCount(), q = 4, tot = n + 2 * q;
-    let d = '';
-    for (let r = 0; r < n; r++) for (let col = 0; col < n; col++) if (qr.isDark(r, col)) d += 'M' + (col + q) + ' ' + (r + q) + 'h1v1h-1z';
-    return `<svg viewBox="0 0 ${tot} ${tot}" width="${size}" height="${size}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+    if (!window.RacketQR) return null;
+    try { return window.RacketQR.toSVG(text, size); } catch (e) { return null; }
   }
 
   function showQRForMatch(id) {
@@ -582,7 +576,7 @@
     dlg.innerHTML = `<div class="qr-box"><h2 id="qrTitle">${m.court ? 'Terrain ' + m.court + ' · ' : ''}${esc(nameOf(c, m.a))} contre ${esc(nameOf(c, m.b))}</h2>
       ${!base ? `<p class="bad">L'application est ouverte en fichier local : indiquez son adresse web (Réglages → QR codes) pour que les tablettes puissent ouvrir la feuille de match.</p>`
         : (svg ? `<div class="qr-img">${svg}</div><p class="muted small">Scannez avec l'appareil photo de la tablette : la feuille de match s'ouvre, puis le résultat s'affiche en QR à présenter au mode scan.</p>`
-          : `<p class="bad">Générateur de QR codes absent (dossier lib/). Lien de la feuille de match :</p>`)}
+          : `<p class="bad">QR code impossible à générer. Lien de la feuille de match :</p>`)}
       ${url ? `<p class="small qr-link"><a href="${esc(url)}" target="_blank" rel="noopener">Ouvrir la feuille de match</a></p>` : ''}
       <div class="actions"><button class="btn primary" data-action="qr-close">Fermer</button></div></div>`;
     if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
@@ -613,7 +607,7 @@
       const label = st.finished.forfeit ? 'Forfait de ' + (st.finished.forfeit === 'a' ? d.a : d.b) : d.a + ' ' + st.finished.sa + ' – ' + st.finished.sb + ' ' + d.b;
       $('view').innerHTML = `<section class="panel sheet">${head}<h2>Résultat à faire valider</h2><p class="sheet-result">${esc(label)}</p>
         ${err ? `<p class="bad">${esc(err)}</p>` : `${svg ? `<div class="qr-img">${svg}</div>` : ''}<p class="sheet-code" aria-label="Code de résultat">${esc(code)}</p>
-        <p class="muted">Présentez ce QR code au professeur (mode scan)${svg ? '' : ' ou dictez-lui ce code'}.</p>`}
+        <p class="muted">Présentez ce QR code au professeur (mode scan), ou dictez-lui le code ci-dessus.</p>`}
         <button class="btn" data-action="sheet-edit">Modifier le score</button></section>`;
       return;
     }
@@ -632,10 +626,9 @@
 
   /* --- Mode scan (appareil de l'enseignant) : petite fenêtre avec aperçu caméra --- */
   const scan = { panel: null, stream: null, timer: null, busy: false, last: '', lastAt: 0, detector: null, auto: true };
+  // Lecture caméra : lecteur QR intégré au navigateur (BarcodeDetector) ; sinon saisie du code.
   function scanBackend() {
-    if (typeof window.BarcodeDetector === 'function') return 'native';
-    if (typeof window.jsQR === 'function') return 'jsqr';
-    return 'none';
+    return typeof window.BarcodeDetector === 'function' ? 'native' : 'none';
   }
   function beep(ok) {
     try {
@@ -684,7 +677,6 @@
     video.srcObject = scan.stream;
     if (backend === 'native') { try { scan.detector = new window.BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { scan.detector = null; } }
     scanStatus('Présentez le QR code de résultat de la tablette.', '');
-    const canvas = document.createElement('canvas');
     scan.timer = setInterval(async () => {
       if (scan.busy || !video.videoWidth) return;
       scan.busy = true;
@@ -693,13 +685,6 @@
         if (scan.detector) {
           const codes = await scan.detector.detect(video);
           if (codes && codes.length) text = codes[0].rawValue;
-        } else if (typeof window.jsQR === 'function') {
-          const w = Math.min(640, video.videoWidth), h = Math.round(video.videoHeight * w / video.videoWidth);
-          canvas.width = w; canvas.height = h;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          ctx.drawImage(video, 0, 0, w, h);
-          const r = window.jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' });
-          if (r) text = r.data;
         }
         if (text && (text !== scan.last || Date.now() - scan.lastAt > 4000)) { scan.last = text; scan.lastAt = Date.now(); handleScanned(text); }
       } catch (e) { /* image suivante */ }
