@@ -365,3 +365,18 @@ tr.edited td{background:#13342b}
 .elo-explain-body { padding: 8px 4px 0; line-height: 1.5; }
 .match .name .stake { justify-content: center; font-weight: 600; }
 .stake > span { white-space: nowrap; }
+
+/* Projection des poules : tous les joueurs de chaque poule + QR de la poule */
+.proj-hint{font-size:clamp(16px,1.6vw,28px);color:#c3d3df;margin:.6vw 0 0}
+.proj-pools-big{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:1.5vw;margin-top:1.2vw}
+.proj-pool-card{background:#146d62;border:3px solid #55b9a7;border-radius:18px;padding:1.2vw;display:flex;flex-direction:column;gap:.8vw}
+.proj-pool-card:nth-child(even){background:#1c587c;border-color:#5499c0}
+.proj-pool-card.finished{background:#102436;border-color:#274157}
+.ppc-head{display:flex;justify-content:space-between;align-items:baseline;gap:1vw;flex-wrap:wrap}
+.ppc-title{font-size:clamp(26px,3vw,52px);font-weight:800}
+.ppc-meta{font-size:clamp(16px,1.6vw,28px);color:#dbe7ef;font-weight:600}
+.ppc-body{display:flex;gap:1.4vw;align-items:center}
+.ppc-qr svg{width:clamp(150px,13vw,250px)}
+.ppc-players{list-style:none;margin:0;padding:0;display:grid;gap:.35em;font-size:clamp(20px,2.2vw,40px);font-weight:700;flex:1;min-width:0}
+.ppc-players li{display:flex;justify-content:space-between;gap:.6em;overflow-wrap:anywhere}
+.ppc-players b{font-size:.7em;opacity:.85;white-space:nowrap}

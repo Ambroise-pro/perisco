@@ -815,7 +815,7 @@
     } else {
       const name = id => esc(nameOf(c, id));
       const courts = [];
-      for (const t of R.availableCourts(c, s)) {
+      for (const t of (s.mode === 'pools' && s.groups ? [] : R.availableCourts(c, s))) {
         const m = s.matches.find(x => x.court === t && !x.done);
         const qr = m && s.projQr !== false && s.qrToken && publicBase() ? qrSVG(poolOf(s, m) != null ? poolSheetURL(c, s, m.group) : sheetURL(c, s, m), 150) : null;
         const bench = m ? benchFor(s, m) : [];
@@ -837,13 +837,31 @@
         else if (s.mode === 'reclass' && s.phase === 'classement') { const pl = R.reclassPlaces(s); extra += `<h2>Places attribuées</h2><div class="proj-groups"><div>${s.positions.filter(id => pl.has(id)).sort((a, b) => pl.get(a) - pl.get(b)).map(id => pl.get(id) + '. ' + name(id)).join(' · ') || '—'}</div></div>`; }
         else if (s.mode !== 'ladder') { const st = s.mode === 'reclass' ? R.brassageRanking(s) : R.sessionStandings(c, s); extra += `<h2>Classement de la séance</h2><div class="proj-groups"><div>${st.map(x => x.rank + '. ' + name(x.id) + ' (' + x.points + ' pt' + (x.points > 1 ? 's' : '') + ')').join(' · ')}</div></div>`; }
       }
-      html = `<header class="proj-head"><div>${esc(R.MODES[s.mode])}${roundInfo}</div><div class="proj-prog">${done} / ${s.matches.length} matchs</div></header>
+      const head = `<header class="proj-head"><div>${esc(R.MODES[s.mode])}${roundInfo}</div><div class="proj-prog">${done} / ${s.matches.length} matchs</div></header>`;
+      if (s.mode === 'pools' && s.groups) {
+        // Poules : chaque poule avec tous ses joueurs et son QR (feuille de toute la poule), pas match par match.
+        const withQr = s.projQr !== false && s.qrToken && publicBase();
+        html = `${head}<p class="proj-hint">Trouvez votre poule, scannez son QR code, jouez tous vos matchs puis présentez le QR de résultat au professeur.</p>
+          <div class="proj-pools-big">${s.groups.map((g, gi) => {
+            const ms = R.groupMatches(s, gi), dn = ms.filter(m => m.done).length;
+            const courtsNow = [...new Set(ms.filter(m => m.court && !m.done).map(m => m.court))].sort((a, b) => a - b);
+            const wins = {};
+            g.forEach(id => { wins[id] = 0; });
+            ms.forEach(m => { const w = R.winnerOf(m); if (m.done && w && wins[w] != null) wins[w]++; });
+            const svg = withQr ? qrSVG(poolSheetURL(c, s, gi), 240) : null;
+            return `<div class="proj-pool-card ${dn === ms.length && ms.length ? 'finished' : ''}">
+              <div class="ppc-head"><div class="ppc-title">Poule ${gi + 1}</div><div class="ppc-meta">${courtsNow.length ? 'Terrain' + (courtsNow.length > 1 ? 's ' : ' ') + courtsNow.join(', ') + ' · ' : ''}${dn} / ${ms.length} matchs${dn === ms.length && ms.length ? ' ✓' : ''}</div></div>
+              <div class="ppc-body">${svg ? `<div class="proj-qr ppc-qr" aria-label="QR code de la poule ${gi + 1}">${svg}</div>` : ''}
+                <ul class="ppc-players">${g.map(id => `<li><span>${name(id)}</span>${wins[id] ? `<b>${wins[id]} V</b>` : ''}</li>`).join('')}</ul></div></div>`;
+          }).join('')}</div>
+          ${withQr ? '' : '<p class="proj-free">QR codes masqués (case « QR codes des matchs en projection » décochée ou adresse web de l\'application non renseignée).</p>'}
+          ${extra}`;
+      } else {
+        html = `${head}
         <div class="proj-courts">${courts.join('')}</div>
-        ${s.mode === 'pools' && s.projQr !== false && s.qrToken && publicBase() ? `<h2>QR des poules — jouez tous vos matchs puis présentez le résultat</h2><div class="proj-pools">${s.groups.map((g, gi) => {
-          const svg = qrSVG(poolSheetURL(c, s, gi), 170);
-          return `<div class="proj-pool">${svg ? `<div class="proj-qr">${svg}</div>` : ''}<div><div class="proj-t">Poule ${gi + 1}</div><div class="proj-pool-names">${g.map(name).join(' · ')}</div></div></div>`;
-        }).join('')}</div>` : `<h2>À suivre</h2>${queue.length ? `<ol class="proj-queue">${queue.map(m => `<li>${name(m.a)} – ${name(m.b)}</li>`).join('')}</ol>` : '<p class="proj-free">Aucun match en attente</p>'}`}
+        <h2>À suivre</h2>${queue.length ? `<ol class="proj-queue">${queue.map(m => `<li>${name(m.a)} – ${name(m.b)}</li>`).join('')}</ol>` : '<p class="proj-free">Aucun match en attente</p>'}
         ${extra}`;
+      }
     }
     $('view').innerHTML = html + `<div class="proj-tools"><button class="btn" data-action="proj-fullscreen">Plein écran (F)</button><button class="btn" data-action="proj-close">Fermer</button></div>`;
   }

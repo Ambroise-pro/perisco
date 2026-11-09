@@ -189,6 +189,7 @@ La **confrontation directe** compte les victoires dans les matchs entre les seul
 ## Mode projection
 Dans la séance, le bouton **📺 Mode projection** ouvre une seconde fenêtre (même page, adresse terminée par `#projection`) à afficher au vidéoprojecteur :
 - terrains en très grand, puis matchs « À suivre » ;
+- en **poules classiques** : une carte par poule avec **tous ses joueurs**, le **QR code de la poule** (feuille de tous les matchs), les terrains utilisés, l'avancement et les victoires ; plus de premier match terrain par terrain ;
 - pour la montante-descendante, placement de la rotation avec ↑/↓ ;
 - plein écran avec la touche F.
 

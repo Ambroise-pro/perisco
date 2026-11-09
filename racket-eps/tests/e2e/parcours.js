@@ -86,8 +86,13 @@ async function scenario(browser, label, ctxOpts) {
   // Mode projection : seconde fenêtre en lecture seule, mise à jour en direct, sans Elo
   const proj = await ctx.newPage();
   await proj.goto(FILE + '#projection');
-  await proj.waitForSelector('.proj-court');
-  check(await proj.$$eval('.proj-court', n => n.length) === 4, 'projection : 4 terrains affichés');
+  await proj.waitForSelector('.proj-pool-card');
+  const projPools = await proj.evaluate(() => {
+    const s = window.__racket.getDB().classes[0].sessions[0], names = window.__racket.getDB().classes[0].students.reduce((o, p) => (o[p.id] = p.name, o), {});
+    const cards = [...document.querySelectorAll('.proj-pool-card')];
+    return cards.length === s.groups.length && s.groups.every((g, i) => g.every(id => cards[i].querySelector('.ppc-players').textContent.includes(names[id])));
+  });
+  check(projPools, 'projection poules : chaque poule affichée avec tous ses joueurs (pas le premier match)');
   check(!/Elo/i.test(await proj.innerText('body')), 'projection : aucune donnée Elo affichée');
   const projBefore = await proj.textContent('.proj-prog');
   // Toucher le terrain 1 ouvre la saisie du score (sans clavier)
@@ -106,7 +111,7 @@ async function scenario(browser, label, ctxOpts) {
   await page.waitForFunction(() => !document.querySelector('#scoreDialog').open);
   await proj.waitForFunction(b => document.querySelector('.proj-prog').textContent !== b, projBefore, { timeout: 5000 });
   check(true, 'projection mise à jour automatiquement après une saisie (' + (await proj.textContent('.proj-prog')) + ')');
-  check(await proj.$$eval('.proj-court .court-draw', n => n.length) === 4, 'projection : terrains dessinés');
+  check(/Poule 1/.test(await proj.textContent('.proj-pool-card')), 'projection : cartes de poule lisibles');
   if (label === 'ordinateur') await proj.screenshot({ path: path.join(OUT, label + '-projection.png') });
   await proj.close();
   const counter = { n: 0 };
@@ -357,6 +362,14 @@ async function qrFlow(browser) {
   await page.click('[data-tab="session"]');
   await page.click('[data-action="create-session"]');
   await page.click('[data-action="start-session"]');
+  // Projection des poules : un QR par poule (feuille de toute la poule) et tous les joueurs
+  const pj = await ctx.newPage();
+  await pj.goto(BASE + '#projection');
+  await pj.waitForSelector('.proj-pool-card');
+  const pjInfo = await pj.evaluate(() => ({ cards: document.querySelectorAll('.proj-pool-card').length, qrs: document.querySelectorAll('.proj-pool-card .ppc-qr svg').length, players: document.querySelectorAll('.ppc-players li').length, groups: window.__racket.getDB().classes[0].sessions.find(x => x.status !== 'closed').groups }));
+  check(pjInfo.cards === pjInfo.groups.length && pjInfo.qrs === pjInfo.cards && pjInfo.players === pjInfo.groups.flat().length, 'projection : ' + pjInfo.cards + ' poules, chacune avec son QR et tous ses joueurs (' + pjInfo.players + ')');
+  await pj.screenshot({ path: path.join(OUT, 'projection-poules.png') });
+  await pj.close();
   // En poules classiques, le QR d'un terrain ouvre la feuille de SA poule (tous les matchs), pas un seul match.
   await page.click('.court-card [data-action="qr-match"] >> nth=0');
   await page.waitForSelector('#qrDialog[open]');
