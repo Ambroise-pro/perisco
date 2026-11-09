@@ -1215,13 +1215,39 @@
     const nm = id => (c.students.find(p => p.id === id) || {}).name || '?';
     const d = { v: 1, s: shortId(s.id), m: shortId(m.id), a: nm(m.a), b: nm(m.b), t: m.court || null, g: s.target || 11, k: ensureQrToken(s), n: s.seq };
     const st = matchStakes(c, s, m);
-    if (st) { d.ea = Math.round(st.ra * 10) / 10; d.eb = Math.round(st.rb * 10) / 10; d.K = st.k; } // Elo de début de séance (enjeu affiché)
+    if (st) { d.ea = Math.round(st.ra); d.eb = Math.round(st.rb); d.K = st.k; } // Elo de début de séance (enjeu affiché)
     return d;
   }
-  function encodeSheet(d) { return utf8ToB64url(JSON.stringify(d)); }
+  /*
+   * Format compact des feuilles (v2) : tableau JSON sans noms de clés, Elo entiers, K omis s'il vaut 32.
+   * Le QR reste ainsi peu dense (lisible de loin, au vidéoprojecteur). Les liens v1 restent lisibles.
+   *   match : [2, s, m, a, b, t, g, k, n, ea, eb, K]
+   *   poule : [2, 'p', s, g, k, n, t, noms[], elos[], paires, K]
+   */
+  function encodeSheet(d) {
+    const K = d.K != null && d.K !== 32 ? d.K : null;
+    let arr;
+    if (d.kind === 'pool') arr = [2, 'p', d.s, d.g, d.k, d.n, d.t, d.p, d.e || null, d.m, K];
+    else arr = [2, d.s, d.m, d.a, d.b, d.t, d.g, d.k, d.n, d.ea != null ? d.ea : null, d.eb != null ? d.eb : null, K];
+    while (arr.length && arr[arr.length - 1] == null) arr.pop();
+    return utf8ToB64url(JSON.stringify(arr));
+  }
+  function expandSheet(raw) {
+    if (!Array.isArray(raw)) return raw;
+    if (raw[0] !== 2) return null;
+    const def = (v, x) => (v == null ? x : v);
+    if (raw[1] === 'p') {
+      const d = { v: 1, kind: 'pool', s: raw[2], g: raw[3], k: raw[4], n: raw[5], t: raw[6], p: raw[7], m: raw[9], K: def(raw[10], 32) };
+      if (Array.isArray(raw[8])) d.e = raw[8];
+      return d;
+    }
+    const d = { v: 1, s: raw[1], m: raw[2], a: raw[3], b: raw[4], t: def(raw[5], null), g: def(raw[6], 11), k: raw[7], n: raw[8] };
+    if (raw[9] != null && raw[10] != null) { d.ea = raw[9]; d.eb = raw[10]; d.K = def(raw[11], 32); }
+    return d;
+  }
   function decodeSheet(str) {
-    const d = JSON.parse(b64urlToUtf8(String(str || '')));
-    if (!d || d.v !== 1 || !d.s || !d.m || !d.k || !d.a || !d.b) throw new Error('Feuille de match illisible.');
+    const d = expandSheet(JSON.parse(b64urlToUtf8(String(str || ''))));
+    if (!d || d.v !== 1 || d.kind === 'pool' || !d.s || !d.m || !d.k || !d.a || !d.b) throw new Error('Feuille de match illisible.');
     return d;
   }
 
@@ -1295,14 +1321,14 @@
     return {
       v: 1, kind: 'pool', s: shortId(s.id), g: gi, k: ensureQrToken(s), n: s.seq, t: s.target || 11,
       p: g.map(nm),
-      e: (() => { const st = sessionStartElo(c, s); return g.map(id => Math.round((st[id] != null ? st[id] : 1000) * 10) / 10); })(),
+      e: (() => { const st = sessionStartElo(c, s); return g.map(id => Math.round(st[id] != null ? st[id] : 1000)); })(),
       K: s.k != null ? s.k : (c.k != null ? c.k : 32),
       m: groupMatches(s, gi).map(m => idx(m.a) + idx(m.b)).join('')
     };
   }
 
   function decodePoolSheet(str) {
-    const d = JSON.parse(b64urlToUtf8(String(str || '')));
+    const d = expandSheet(JSON.parse(b64urlToUtf8(String(str || ''))));
     if (!d || d.v !== 1 || d.kind !== 'pool' || !d.s || !d.k || !Array.isArray(d.p) || typeof d.m !== 'string' || d.m.length % 2) throw new Error('Feuille de poule illisible.');
     d.pairs = [];
     for (let i = 0; i < d.m.length; i += 2) {

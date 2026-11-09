@@ -777,3 +777,22 @@ test('Enjeu Elo des feuilles de match : gain et perte possibles, avec les Elo de
   assert.ok(h[h.length - 1].manual && h[h.length - 1].elo === 1500, 'l\'Elo fixé s\'applique après la séance');
   assert.equal(h[h.length - 2].delta, Math.round(0) + h[h.length - 2].delta);
 });
+
+test('Feuilles QR : format compact (QR peu dense) et anciens liens toujours lisibles', () => {
+  const c = R.createDemoClass({ students: 24, sessions: 3, seed: 'compact' });
+  const s = R.createSession(c, { mode: 'pools', groupSize: 6 }).session;
+  R.startSession(c, s);
+  const pd = R.poolSheetData(c, s, 0);
+  const enc = R.encodeSheet(pd);
+  const old = Buffer.from(JSON.stringify(pd)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  assert.ok(enc.length < old.length * 0.8, 'compact : ' + enc.length + ' contre ' + old.length);
+  const d = R.decodePoolSheet(enc), d1 = R.decodePoolSheet(old);
+  for (const k of ['s', 'g', 'k', 'n', 't', 'm', 'K']) assert.deepEqual(d[k], pd[k]);
+  assert.deepEqual(d.p, pd.p); assert.deepEqual(d.e, pd.e); assert.deepEqual(d1.pairs, d.pairs);
+  const m = s.matches[0], md = R.sheetData(c, s, m);
+  const dm = R.decodeSheet(R.encodeSheet(md));
+  for (const k of ['s', 'm', 'a', 'b', 't', 'g', 'k', 'n', 'ea', 'eb', 'K']) assert.deepEqual(dm[k], md[k]);
+  assert.throws(() => R.decodeSheet(enc), /illisible/, 'une feuille de poule n\'est pas une feuille de match');
+  // Le code résultat produit à partir du lien compact est accepté
+  assert.ok(R.applyAnyCode(c, s, R.resultCode(dm, { sa: 11, sb: 7 })).ok);
+});

@@ -195,7 +195,7 @@ button.cd-name:hover{background:#e6f6f1}
 .wg-card .wg-move .player{margin:4px 0}
 .proj-court{display:flex;flex-direction:column;gap:.8vw;padding:1vw}
 .proj-court .proj-row{align-items:center}
-.proj-court .proj-qr svg{width:clamp(90px,7vw,140px)}
+.proj-court .proj-qr svg{width:clamp(130px,10vw,200px)}
 .proj-bench{font-size:clamp(16px,1.6vw,26px);color:#c3d3df}
 @media print{.court-draw{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 /* Feuille de poule (tablette) et QR des poules */
@@ -376,7 +376,7 @@ tr.edited td{background:#13342b}
 .ppc-title{font-size:clamp(26px,3vw,52px);font-weight:800}
 .ppc-meta{font-size:clamp(16px,1.6vw,28px);color:#dbe7ef;font-weight:600}
 .ppc-body{display:flex;gap:1.4vw;align-items:center}
-.ppc-qr svg{width:clamp(150px,13vw,250px)}
+.ppc-qr svg{width:clamp(200px,17vw,340px)}
 .ppc-players{list-style:none;margin:0;padding:0;display:grid;gap:.35em;font-size:clamp(20px,2.2vw,40px);font-weight:700;flex:1;min-width:0}
 .ppc-players li{display:flex;justify-content:space-between;gap:.6em;overflow-wrap:anywhere}
 .ppc-players b{font-size:.7em;opacity:.85;white-space:nowrap}
