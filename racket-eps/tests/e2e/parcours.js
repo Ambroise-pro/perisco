@@ -216,7 +216,27 @@ async function demoClass(browser) {
   await page.click('#view [data-action="student"] >> nth=0');
   await page.waitForSelector('#studentDialog[open]');
   check(await page.$$eval('#studentDialog #eloChart circle', n => n.length) === 4, 'fiche en pop-up : graphiques alimentés par les séances simulées');
+  // Elo saisi à la main depuis la fiche (boutons, sans clavier)
+  const elo0 = await page.evaluate(() => { const c = window.__racket.getDB().classes[0], id = document.querySelector('#studentDialog [data-action="elo-edit"]').dataset.id; return { id, elo: Math.round(window.RacketEngine.computeStats(c)[id].elo) }; });
+  await page.click('#studentDialog [data-action="elo-edit"]');
+  await page.click('#studentDialog [data-action="elo-step"][data-delta="50"]');
+  await page.click('#studentDialog [data-action="elo-step"][data-delta="50"]');
+  await page.click('#studentDialog [data-action="elo-step"][data-delta="-10"]');
+  await page.click('#studentDialog [data-action="elo-save"]');
+  const elo1 = await page.evaluate(id => Math.round(window.RacketEngine.computeStats(window.__racket.getDB().classes[0])[id].elo), elo0.id);
+  check(elo1 === elo0.elo + 90 && /Fixé à/.test(await page.textContent('#studentDialog')), 'Elo fixé à la main depuis la fiche (+50 +50 −10 → +90), ajustement visible');
+  await page.screenshot({ path: path.join(OUT, 'elo-manuel-fiche.png') });
+  await page.click('#studentDialog [data-action="elo-remove"]');
+  const elo2 = await page.evaluate(id => Math.round(window.RacketEngine.computeStats(window.__racket.getDB().classes[0])[id].elo), elo0.id);
+  check(elo2 === elo0.elo, 'ajustement annulé : retour à l\'Elo calculé');
   await page.click('[data-action="student-close"]');
+  // Modifier plusieurs Elo depuis le classement
+  await page.click('[data-action="elo-bulk-edit"]');
+  await page.click('[data-action="elo-bulk-step"][data-delta="10"] >> nth=1');
+  await page.click('[data-action="elo-bulk-step"][data-delta="-10"] >> nth=2');
+  await page.click('[data-action="elo-bulk-save"]');
+  const adj = await page.evaluate(() => (window.__racket.getDB().classes[0].eloAdjustments || []).length);
+  check(adj === 2 && (await page.$$('#view .badge[title="Elo fixé à la main"]')).length === 2, 'classement : 2 Elo modifiés d\'un coup, marqués ✎');
 
   // Groupes de travail
   await page.click('[data-tab="groups"]');

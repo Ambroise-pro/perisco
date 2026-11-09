@@ -114,6 +114,13 @@ Les effectifs diffèrent au plus d'un élève. Un appel permet d'exclure les abs
 ## Fiche élève
 La fiche s'ouvre dans une **fenêtre** (pop-up) quand on touche le nom d'un élève, depuis le classement, la liste des élèves ou les groupes de travail. Elle se ferme avec ✕, avec la touche Échap ou en touchant le fond.
 
+## Elo saisi à la main
+L'enseignant peut **fixer l'Elo** d'un élève quand il le souhaite (niveau connu d'avance, erreur à rattraper, élève arrivé en cours de cycle…) :
+- **Depuis la fiche élève** : « ✎ Modifier l'Elo », puis boutons −50 / −10 / +10 / +50 (pas besoin du clavier), note facultative, « Enregistrer ».
+- **Depuis le classement** : « ✎ Modifier les Elo » permet d'en changer plusieurs d'un coup, puis « Enregistrer » (confirmation demandée).
+
+Un ajustement signifie « Elo fixé à X après la séance N » (N = 0 avant toute séance). Il s'insère au bon endroit de la chronologie : si une séance passée est corrigée, le recalcul le conserve à sa place, sans double comptage. Une séance en cours garde les Elo de son début ; l'ajustement s'applique après elle. Les ajustements sont marqués ✎ dans le classement, l'historique et les graphiques, et chacun peut être annulé depuis la fiche (« Annuler cet ajustement »).
+
 ## QR codes : autonomie des élèves sur tablette
 Les données restent **sur l'appareil de l'enseignant**, sans serveur. Les résultats passent donc par un aller-retour de QR codes :
 1. **QR du match.** Il s'affiche sur l'appareil de l'enseignant (bouton « QR » d'un terrain, ou « QR de la feuille de match » dans les actions d'un match) et, si la case est cochée, sur chaque terrain en **projection**.
