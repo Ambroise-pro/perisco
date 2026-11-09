@@ -65,7 +65,15 @@ async function scenario(browser, label, ctxOpts) {
   check(present === 11, 'appel : 1 absent, 11 présents');
   const groups = await page.evaluate(() => window.__racket.getDB().classes[0].sessions[0].groups.map(g => g.length));
   check(Math.max(...groups) - Math.min(...groups) <= 1, 'groupes équilibrés proposés : ' + groups.join('+'));
+  await page.click('[data-action="placement-opt"][data-key="distribution"][data-value="balanced"]');
+  const bal = await page.evaluate(() => { const c = window.__racket.getDB().classes[0]; return c.sessions[0].distribution; });
+  await page.click('[data-action="placement-opt"][data-key="distribution"][data-value="level"]');
+  const lvl = await page.evaluate(() => { const c = window.__racket.getDB().classes[0], s = c.sessions[0], R = window.RacketEngine; return s.distribution === 'level' && JSON.stringify(s.groups.flat()) === JSON.stringify(R.presentIds(c, s)); });
+  check(bal === 'balanced' && lvl && /Elo moy\./.test(await page.textContent('#view')), 'poules réparties automatiquement par niveau Elo (ou équilibrées), Elo moyen affiché');
   await page.screenshot({ path: path.join(OUT, label + '-1-appel.png'), fullPage: true });
+  await page.click('[data-action="start-session"]');
+  await page.click('[data-action="regroup-session"]');
+  check(await page.evaluate(() => window.__racket.getDB().classes[0].sessions[0].status) === 'setup', 'poules refaites par niveau Elo avant tout résultat');
   await page.click('[data-action="start-session"]');
   const playing = await page.$$eval('.match.st-playing', n => n.length);
   check(playing > 0 && playing <= 4, `${playing} match(s) en cours sur 4 terrains maximum`);

@@ -80,7 +80,7 @@
   const ICONS = {"home": "<path d=\"M3 11l9-7 9 7\"/><path d=\"M5 10v10h14V10\"/>", "court": "<rect x=\"3\" y=\"5\" width=\"18\" height=\"14\" rx=\"1.5\"/><path d=\"M12 5v14\"/>", "groups": "<circle cx=\"7\" cy=\"8\" r=\"3\"/><circle cx=\"17\" cy=\"8\" r=\"3\"/><path d=\"M2 20a5 5 0 0 1 10 0\"/><path d=\"M12 20a5 5 0 0 1 10 0\"/>", "rank": "<path d=\"M4 20V10\"/><path d=\"M10 20V4\"/><path d=\"M16 20v-7\"/><path d=\"M22 20H2\"/>", "student": "<circle cx=\"12\" cy=\"8\" r=\"3.5\"/><path d=\"M5 20a7 7 0 0 1 14 0\"/>"};
   const icon = (k, size) => `<svg width="${size || 30}" height="${size || 30}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ''}</svg>`;
   // Brouillon de la nouvelle séance (réglé au toucher, sans clavier)
-  const draft = { mode: 'pools', rounds: 4, target: 11, groupSize: 4, ladderType: 'group', move: 1, gap: 3, legs: 1, permutation: 'swap', tiebreak: 'h2h-diff-pf' };
+  const draft = { mode: 'pools', rounds: 4, target: 11, groupSize: 4, ladderType: 'group', move: 1, gap: 3, legs: 1, permutation: 'swap', tiebreak: 'h2h-diff-pf', distribution: 'level' };
 
   function render() {
     if (projection) { renderProjection(); return; }
@@ -185,6 +185,7 @@
     if (m === 'ladder') fields.push(segBtns('ladderType', [['single', 'Individuelle (2 par terrain)'], ['group', 'Par groupes']], 'Variante'));
     if (group && !(m === 'ladder' && draft.ladderType === 'single')) fields.push(segBtns('groupSize', [[3, '3'], [4, '4'], [5, '5'], [6, '6']], m === 'reclass' ? 'Élèves par poule de brassage' : 'Élèves par groupe'));
     if (m === 'ladder' && draft.ladderType === 'group') fields.push(segBtns('move', [[1, '1'], [2, '2']], 'Montées / descentes'));
+    if (m === 'pools' || m === 'reclass') fields.push(segBtns('distribution', [['level', 'Par niveau Elo'], ['balanced', 'Poules équilibrées']], 'Répartition des poules'));
     if (m === 'pools') fields.push(segBtns('legs', [[1, 'Aller simple'], [2, 'Aller-retour']], 'Matchs'));
     if (m === 'challenge') { fields.push(stepperBig('gap', 1, 50, 'Écart de rang maximal')); fields.push(segBtns('permutation', [['swap', 'Le vainqueur prend la place'], ['none', 'Pas de permutation']], 'Si le défiant gagne')); }
     fields.push(segBtns('target', [[7, '7'], [11, '11'], [15, '15'], [21, '21']], 'Score cible'));
@@ -205,8 +206,16 @@
     const warnings = R.placementWarnings(s);
     let placement;
     if (s.groups) {
-      placement = `<p class="muted small">Proposition automatique dans l'ordre Elo (terrain/groupe 1 = meilleurs Elo). Ce placement est exactement celui qui servira à générer les matchs. Les déplacements ne modifient pas l'Elo.</p>
-        <div class="grid">${s.groups.map((g, i) => `<div class="court"><h3>${s.mode === 'ladder' ? 'Terrain' : 'Groupe'} ${i + 1}${i + 1 > R.availableCourts(c, s).length ? ' <span class="badge">partage un terrain</span>' : ''}</h3>${
+      const pools = s.mode === 'pools' || s.mode === 'reclass';
+      const avg = R.groupsAverageElo(c, s);
+      const optBtn = (key, v, l, cur) => `<button type="button" class="seg-btn ${String(cur) === String(v) ? 'on' : ''}" aria-pressed="${String(cur) === String(v)}" data-action="placement-opt" data-key="${key}" data-value="${v}">${l}</button>`;
+      const opts = pools ? `<div class="fields-grid">
+          <div class="field-big"><span class="fb-label">Répartition automatique</span><div class="seg wide" role="group" aria-label="Répartition automatique">${optBtn('distribution', 'level', 'Par niveau Elo', s.distribution || 'level')}${optBtn('distribution', 'balanced', 'Poules équilibrées', s.distribution || 'level')}</div></div>
+          <div class="field-big"><span class="fb-label">Élèves par poule</span><div class="seg" role="group" aria-label="Élèves par poule">${[3, 4, 5, 6].map(n => optBtn('groupSize', n, n, s.groupSize)).join('')}</div></div></div>
+        <p class="muted small">${(s.distribution || 'level') === 'level' ? 'Par niveau : les élèves sont rangés selon leur Elo, poule 1 = meilleurs Elo, puis les suivants. Chacun joue contre des adversaires de son niveau.' : 'Équilibrées : distribution en serpentin selon l\'Elo, chaque poule a un niveau moyen comparable.'} Les déplacements manuels ne modifient pas l'Elo.</p>`
+        : `<p class="muted small">Proposition automatique dans l'ordre Elo (terrain/groupe 1 = meilleurs Elo). Les déplacements ne modifient pas l'Elo.</p>`;
+      placement = `${opts}
+        <div class="grid">${s.groups.map((g, i) => `<div class="court"><h3>${s.mode === 'ladder' ? 'Terrain' : pools ? 'Poule' : 'Groupe'} ${i + 1} <span class="badge" title="Elo moyen">Elo moy. ${fmt(avg[i])}</span>${i + 1 > R.availableCourts(c, s).length ? ' <span class="badge">partage un terrain</span>' : ''}</h3>${
           g.map(id => `<div class="player"><span>${esc(nameOf(c, id))}</span><label class="sr-only" for="mv_${id}">Groupe de ${esc(nameOf(c, id))}</label><select id="mv_${id}" data-action="move-group" data-id="${id}">${
             s.groups.map((_, j) => `<option value="${j}" ${j === i ? 'selected' : ''}>${s.mode === 'ladder' ? 'T' : 'G'}${j + 1}</option>`).join('')}<option value="${s.groups.length}">Nouveau</option></select></div>`).join('')}</div>`).join('')}</div>`;
     } else {
@@ -222,7 +231,7 @@
       <h3 style="margin-top:20px">Placement</h3>${placement}
       ${warnings.length ? `<div class="notice warn">${warnings.map(esc).join('<br>')}</div>` : ''}
       <div class="actions" style="margin-top:18px"><button class="btn primary big-cta" data-action="start-session" ${s.positions.length < 2 ? 'disabled' : ''}>✓ Valider l'appel et les terrains (${s.positions.length})</button>
-      <button class="btn" data-action="repropose">Reproposer selon l'Elo</button>
+      <button class="btn" data-action="repropose">↻ Répartir automatiquement selon l'Elo</button>
       <button class="btn danger" data-action="cancel-session">Annuler la séance</button></div></section>`;
   }
 
@@ -434,6 +443,7 @@
     ${standingsPanel(c, s)}
     <section class="panel"><h2>Clôturer la séance</h2><p class="muted">Le calcul Elo utilisera, pour chaque match, les Elo de début de séance. ${s.reopened ? 'Les séances suivantes seront recalculées automatiquement.' : ''}</p>
       <div class="actions"><button class="btn primary" data-action="close-session" ${R.canClose(s).ok ? '' : 'disabled'}>✓ Valider tous les résultats et recalculer l'Elo</button>
+      ${(s.mode === 'pools' || s.mode === 'reclass') && !s.reopened && !s.matches.some(m => m.done || m.sa != null || m.sb != null || m.forfeit) ? '<button class="btn" data-action="regroup-session">↻ Refaire les poules par niveau Elo</button>' : ''}
       <button class="btn danger" data-action="cancel-session">${s.reopened ? 'Annuler la correction (restaurer la séance clôturée)' : 'Annuler la séance'}</button></div>
       ${R.canClose(s).ok ? '' : `<p class="muted small">${esc(R.canClose(s).reason)}</p>`}</section>`;
   }
@@ -1243,6 +1253,13 @@
       const c = cl(), s = R.activeSession(c), id = ss.id;
       const r = act(o => R.clearResult(c, s, id, o), 'Résultat effacé');
       if (r && r.ok) closeScoreSheet();
+    },
+    'placement-opt': el => { const c = cl(); act(() => R.setPlacementOptions(c, R.activeSession(c), { [el.dataset.key]: el.dataset.value })); },
+    'regroup-session': () => {
+      const c = cl();
+      if (!confirm('Revenir à l\'appel et refaire les poules par niveau Elo ? Aucun résultat n\'a encore été saisi.')) return;
+      const s = R.activeSession(c);
+      act(() => { const r = R.regroupSession(c, s); if (r.ok) R.setPlacementOptions(c, s, { distribution: 'level' }); return r; });
     },
     'repropose': () => { const c = cl(); R.proposePlacement(c, R.activeSession(c)); save(); render(); },
     'shift': el => act(() => R.shiftPosition(R.activeSession(cl()), el.dataset.id, Number(el.dataset.dir))),

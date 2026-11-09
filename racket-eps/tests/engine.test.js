@@ -719,3 +719,33 @@ test('Elo manuel avant toute séance : point de départ du cycle', () => {
   const s = newSession(c, { mode: 'pools', groupSize: 4 });
   assert.equal(s.positions[0], A, 'placement proposé selon l\'Elo saisi');
 });
+
+test('Poules : répartition automatique par niveau Elo ou équilibrée, et refaire les poules avant tout résultat', () => {
+  const c = R.createDemoClass({ students: 16, sessions: 3, seed: 'poules-niveau' });
+  const ranked = R.ranks(c).map(p => p.id);
+  const r = R.createSession(c, { mode: 'pools', groupSize: 4 });
+  assert.ok(r.ok);
+  const s = r.session;
+  assert.equal(s.distribution, 'level');
+  assert.deepEqual(s.groups, [ranked.slice(0, 4), ranked.slice(4, 8), ranked.slice(8, 12), ranked.slice(12, 16)]);
+  const avgLevel = R.groupsAverageElo(c, s);
+  assert.ok(avgLevel[0] >= avgLevel[1] && avgLevel[1] >= avgLevel[2] && avgLevel[2] >= avgLevel[3]);
+  assert.ok(R.setPlacementOptions(c, s, { distribution: 'balanced' }).ok);
+  assert.deepEqual(s.groups[0], [ranked[0], ranked[7], ranked[8], ranked[15]]);
+  const avgBal = R.groupsAverageElo(c, s);
+  assert.ok(Math.max(...avgBal) - Math.min(...avgBal) < Math.max(...avgLevel) - Math.min(...avgLevel));
+  assert.ok(R.setPlacementOptions(c, s, { distribution: 'level', groupSize: 5 }).ok);
+  assert.equal(s.groups.length, 3);
+  assert.deepEqual(s.groups.flat(), ranked);
+  // Lancée, mais sans résultat : on peut refaire les poules
+  assert.ok(R.startSession(c, s).ok);
+  assert.ok(s.matches.length > 0);
+  assert.ok(R.regroupSession(c, s).ok);
+  assert.equal(s.status, 'setup');
+  assert.equal(s.matches.length, 0);
+  assert.ok(R.startSession(c, s).ok);
+  const m = s.matches[0];
+  assert.ok(R.recordResult(c, s, m.id, { sa: 11, sb: 5 }).ok);
+  assert.equal(R.regroupSession(c, s).ok, false, 'interdit dès qu\'un résultat est saisi');
+  assert.equal(R.setPlacementOptions(c, s, { distribution: 'balanced' }).ok, false);
+});

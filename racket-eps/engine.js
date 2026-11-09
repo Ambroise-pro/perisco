@@ -234,6 +234,7 @@
       legs: opts.legs === 2 || opts.legs === '2' ? 2 : 1,
       permutation: opts.permutation === 'none' ? 'none' : 'swap',
       tiebreak: TIEBREAKS[opts.tiebreak] ? opts.tiebreak : 'h2h-diff-pf',
+      distribution: opts.distribution === 'balanced' ? 'balanced' : 'level',
       k: c.k != null ? c.k : 32,
       courts: Math.max(1, c.courts || 1), closedCourts: [],
       byes: [], moves: [], phase: mode === 'reclass' ? 'brassage' : null, divisions: []
@@ -301,7 +302,41 @@
       }
       return groups;
     }
-    return balancedGroups(ids, groupCount(ids.length, s.groupSize));
+    const g = groupCount(ids.length, s.groupSize);
+    // Poules : « par niveau » (blocs consécutifs du classement Elo, poule 1 = meilleurs Elo)
+    // ou « équilibrées » (serpentin, niveau moyen comparable entre poules).
+    if ((s.mode === 'pools' || s.mode === 'reclass') && s.distribution === 'balanced') return makeWorkGroups(ids, g, 'balanced');
+    return balancedGroups(ids, g);
+  }
+
+  /** Change la répartition automatique (niveau / équilibrée) et la taille des poules, puis répartit à nouveau. */
+  function setPlacementOptions(c, s, opts) {
+    if (s.status !== 'setup') return fail('La répartition se fait avant de valider les terrains.');
+    opts = opts || {};
+    if (opts.distribution) s.distribution = opts.distribution === 'balanced' ? 'balanced' : 'level';
+    if (opts.groupSize != null) s.groupSize = clampInt(opts.groupSize, 2, 6, s.groupSize);
+    proposePlacement(c, s);
+    return { ok: true };
+  }
+
+  /**
+   * Poules déjà lancées mais sans aucun résultat saisi : retour à l'appel et aux terrains pour
+   * refaire la répartition (par exemple selon le niveau Elo). Aucun résultat n'est perdu.
+   */
+  function regroupSession(c, s) {
+    if (s.status !== 'playing' || s.reopened) return fail('Répartition impossible pour cette séance.');
+    if (!isGroupMode(s) || s.mode === 'ladder') return fail('Réservé aux poules.');
+    if (s.matches.some(m => m.done || m.sa != null || m.sb != null || m.forfeit)) return fail('Des résultats sont déjà saisis : impossible de refaire les poules.');
+    s.status = 'setup'; s.matches = []; s.round = 0; s.order = null;
+    s.phase = s.mode === 'reclass' ? 'brassage' : null; s.divisions = []; s.byes = [];
+    proposePlacement(c, s);
+    return { ok: true };
+  }
+
+  function groupsAverageElo(c, s) {
+    if (!s.groups) return [];
+    const st = computeStats(c);
+    return s.groups.map(g => g.reduce((t, id) => t + (st[id] ? st[id].elo : 0), 0) / (g.length || 1));
   }
 
   /** Proposition automatique : ordre Elo des présents ; groupes par terrain pour les formats de groupes. */
@@ -1557,7 +1592,7 @@
     SCHEMA_VERSION, MODES, GROUP_MODES,
     uid, clone, isSporting, winnerOf, loserOf, validateScore, expected, sessionDeltas, computeStats, ranks,
     setElo, removeEloAdjustment, lastClosedSeq,
-    activeSession, createSession, presentIds, proposePlacement, setAbsent, moveToGroup, shiftPosition, placementWarnings,
+    activeSession, createSession, presentIds, proposePlacement, setPlacementOptions, regroupSession, groupsAverageElo, setAbsent, moveToGroup, shiftPosition, placementWarnings,
     balancedGroups, groupCount, makeGroups, startSession, roundRobin, autoAssign, matchState,
     totalCourts, availableCourts, setSessionCourts, setCourtClosed,
     recordResult, clearResult, resolve, sessionStandings, minCostPerfectMatching,

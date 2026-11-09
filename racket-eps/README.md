@@ -104,6 +104,13 @@ Les terrains sont dessinés vus de dessus, aux proportions réglementaires, selo
 
 Les identités ne reposent pas sur la couleur : chaque élève est nommé. Les cotes affichées dans la maquette de conception viennent des règlements usuels et méritent une vérification avant toute communication officielle.
 
+## Répartition des poules par niveau Elo
+En poules classiques (et en brassage du reclassement), l'écran d'appel propose une **répartition automatique** :
+- **Par niveau Elo** (par défaut) : élèves rangés selon leur Elo, poule 1 = meilleurs Elo, puis les suivants ; chacun joue contre des adversaires de son niveau.
+- **Poules équilibrées** : serpentin selon l'Elo, chaque poule a un niveau moyen comparable.
+
+Le nombre d'élèves par poule (3 à 6) se change sur le même écran, et l'Elo moyen de chaque poule est affiché. « ↻ Répartir automatiquement selon l'Elo » annule les déplacements manuels. Si les poules sont déjà lancées mais qu'aucun résultat n'est saisi, « ↻ Refaire les poules par niveau Elo » ramène à l'appel pour les reformer.
+
 ## Groupes de travail
 L'onglet **Groupes de travail** répartit les élèves présents sur un nombre de terrains choisi (− / +), sans créer de séance et sans toucher à l'Elo :
 - **Équilibrée** (par défaut) : distribution en serpentin selon le classement Elo (1ᵉʳ → T1, 2ᵉ → T2 … dernier terrain, puis retour). Chaque terrain a un niveau moyen comparable, et l'écart entre les moyennes est affiché.
