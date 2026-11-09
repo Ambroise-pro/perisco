@@ -107,7 +107,7 @@
   function rankingTable(r, opts) {
     opts = opts || {};
     return `<div class="tablewrap"><table><thead><tr><th>Rang</th><th>Élève</th><th>Elo</th><th>Variation</th><th>Matchs</th><th>V</th><th>D</th><th>%</th><th>Diff. points</th></tr></thead><tbody>${
-      r.map((p, i) => `<tr><td>${i + 1}</td><td><button class="btn linkish" data-action="student" data-id="${p.id}">${esc(p.name)}</button></td><td><b>${fmt(p.elo)}</b></td>
+      r.map((p, i) => `<tr><td>${i + 1}</td><td><button class="btn linkish" data-action="student" data-id="${p.id}">${esc(p.name)}</button></td><td><b>${fmt(p.elo)}</b>${p.history.length && p.history[p.history.length - 1].manual ? ' <span class="badge" title="Elo fixé à la main">✎</span>' : ''}</td>
         <td class="${p.lastDelta >= 0 ? 'good' : 'bad'}">${!p.history.length ? '—' : (p.history[p.history.length - 1].absent ? '<span class="muted">absent</span>' : (p.lastDelta >= 0 ? '+' : '') + fmt(p.lastDelta))}</td>
         <td>${p.played}</td><td>${p.wins}</td><td>${p.losses}</td><td>${p.played ? fmt(p.wins / p.played * 100) + ' %' : '—'}</td><td>${p.for - p.against}</td></tr>`).join('')
     }</tbody></table></div>${opts.note ? `<p class="muted small">${opts.note}</p>` : ''}`;
@@ -480,18 +480,38 @@
     return `<div class="dlg-head"><h2 id="studentTitle">Fiche individuelle · ${esc(p.name)}</h2><button class="btn mini" data-action="student-close" aria-label="Fermer la fiche">✕</button></div>
       <div class="grid"><div class="stat"><b>${fmt(p.elo)}</b><small>Elo actuel · ${rank}ᵉ / ${c.students.length}</small></div><div class="stat"><b>${p.wins} / ${p.played}</b><small>Matchs gagnés${p.played ? ' (' + fmt(p.wins / p.played * 100) + ' %)' : ''}</small></div>
       <div class="stat"><b>${p.for} / ${p.against}</b><small>Points marqués / encaissés</small></div><div class="stat"><b>${p.opponents.size}</b><small>Adversaires différents</small></div><div class="stat"><b>${p.absences}</b><small>Absences</small></div></div>
+      ${eloEditor(c, p)}
       <h3 style="margin-top:20px">Évolution de l'Elo</h3>
-      ${lineChart({ id: 'eloChart', points: p.history.map(h => ({ v: h.elo, x: 'S' + h.seq, label: 'Séance ' + h.seq + (h.date ? ' · ' + h.date : '') + (h.absent ? ' · absent' : ''), hollow: h.absent })), baseline: Number.isFinite(c.initialElo) ? c.initialElo : 1000, baselineLabel: 'Elo initial', fmtVal: v => fmt(v), name: 'Elo' })}
+      ${lineChart({ id: 'eloChart', points: p.history.map(h => ({ v: h.elo, x: h.manual ? '✎' : 'S' + h.seq, label: h.manual ? 'Elo fixé à la main' + (h.date ? ' · ' + h.date : '') + (h.note ? ' · ' + h.note : '') : 'Séance ' + h.seq + (h.date ? ' · ' + h.date : '') + (h.absent ? ' · absent' : ''), hollow: h.absent })), baseline: Number.isFinite(c.initialElo) ? c.initialElo : 1000, baselineLabel: 'Elo initial', fmtVal: v => fmt(v), name: 'Elo' })}
       <h3 style="margin-top:20px">Évolution du rang dans la classe</h3>
-      ${lineChart({ id: 'rankChart', points: p.history.map(h => ({ v: h.rank, x: 'S' + h.seq, label: 'Séance ' + h.seq + (h.date ? ' · ' + h.date : '') + (h.absent ? ' · absent' : ''), hollow: h.absent })), invert: true, integer: true, min: 1, max: c.students.length, fmtVal: v => v + 'ᵉ / ' + c.students.length, name: 'Rang' })}
+      ${lineChart({ id: 'rankChart', points: p.history.map(h => ({ v: h.rank, x: h.manual ? '✎' : 'S' + h.seq, label: h.manual ? 'Après l\'Elo fixé à la main' : 'Séance ' + h.seq + (h.date ? ' · ' + h.date : '') + (h.absent ? ' · absent' : ''), hollow: h.absent })), invert: true, integer: true, min: 1, max: c.students.length, fmtVal: v => v + 'ᵉ / ' + c.students.length, name: 'Rang' })}
       <h3 style="margin-top:20px">Évolution par séance (tableau)</h3><div class="tablewrap"><table><tr><th>Séance</th><th>Date</th><th>Variation</th><th>Elo final</th><th>Rang</th></tr>${
-        p.history.map(h => `<tr><td>${h.seq}</td><td>${esc(h.date || '')}</td><td class="${h.delta >= 0 ? 'good' : 'bad'}">${h.absent ? 'absent' : (h.delta >= 0 ? '+' : '') + fmt(h.delta)}</td><td>${fmt(h.elo)}</td><td>${h.rank}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Aucune séance clôturée</td></tr>'}</table></div>
+        p.history.map(h => `<tr class="${h.manual ? 'manual-row' : ''}"><td>${h.manual ? '✎ Elo fixé à la main' + (h.note ? ' — ' + esc(h.note) : '') : h.seq}</td><td>${esc(h.date || '')}</td><td class="${h.delta >= 0 ? 'good' : 'bad'}">${h.absent ? 'absent' : (h.delta >= 0 ? '+' : '') + fmt(h.delta)}</td><td>${fmt(h.elo)}</td><td>${h.rank}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Aucune séance clôturée</td></tr>'}</table></div>
       <h3 style="margin-top:20px">Matchs</h3><div class="tablewrap"><table><tr><th>Séance</th><th>Adversaire</th><th>Score</th><th>Résultat</th></tr>${
         ms.map(m => { const me = m.a === p.id; const opp = me ? m.b : m.a; const won = R.winnerOf(m) === p.id;
           return `<tr><td>${m.seq}</td><td>${esc(nameOf(c, opp))}</td><td>${m.forfeit ? 'forfait' : (me ? m.sa + ' – ' + m.sb : m.sb + ' – ' + m.sa)}</td><td class="${won ? 'good' : 'bad'}">${won ? 'Victoire' : 'Défaite'}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">Aucun match dans les séances clôturées</td></tr>'}</table></div>`;
   }
 
+  // Bloc « Modifier l'Elo » de la fiche : boutons ±10 / ±50, sans clavier (champ libre facultatif).
+  function eloEditor(c, p) {
+    const editing = eloDraft && eloDraft.id === p.id;
+    const adjs = (c.eloAdjustments || []).filter(a => a.studentId === p.id).sort((a, b) => b.at - a.at);
+    const list = adjs.length ? `<ul class="adj-list">${adjs.map(a => `<li><span>✎ Fixé à <b>${fmt(a.value)}</b> ${a.afterSeq ? 'après la séance ' + a.afterSeq : 'au début du cycle'}${a.date ? ' (' + esc(a.date) + ')' : ''}${a.note ? ' — ' + esc(a.note) : ''}</span><button type="button" class="btn mini" data-action="elo-remove" data-id="${a.id}" data-student="${p.id}">Annuler cet ajustement</button></li>`).join('')}</ul>` : '';
+    if (!editing) {
+      return `<div class="elo-box"><div class="row between"><h3 style="margin:0">Elo</h3><button type="button" class="btn" data-action="elo-edit" data-id="${p.id}">✎ Modifier l'Elo</button></div>${list}</div>`;
+    }
+    const v = eloDraft.value;
+    const step = d => `<button type="button" class="btn elo-step" data-action="elo-step" data-delta="${d}" aria-label="${d > 0 ? 'Augmenter' : 'Diminuer'} de ${Math.abs(d)}">${d > 0 ? '+' : '−'}${Math.abs(d)}</button>`;
+    return `<div class="elo-box editing"><h3 style="margin:0 0 8px">Fixer l'Elo de ${esc(p.name)}</h3>
+      <div class="elo-stepper">${step(-50)}${step(-10)}<label class="sr-only" for="eloValue">Nouvel Elo</label><input id="eloValue" type="number" inputmode="numeric" min="100" max="3000" step="1" value="${Math.round(v)}" data-action="elo-input">${step(10)}${step(50)}</div>
+      <p class="muted small">Actuel : ${fmt(p.elo)} → nouveau : <b>${Math.round(v)}</b> (${v - p.elo >= 0 ? '+' : ''}${fmt(v - p.elo)}). L'Elo est fixé maintenant, après la dernière séance clôturée${R.activeSession(c) && R.activeSession(c).status === 'playing' ? ' ; la séance en cours garde les Elo de son début' : ''}. Les séances suivantes partiront de cette valeur.</p>
+      <label class="field"><span class="small">Motif (facultatif)</span><input id="eloNote" type="text" maxlength="120" placeholder="ex. niveau connu en club, retour de blessure…"></label>
+      <div class="actions"><button type="button" class="btn primary" data-action="elo-save" data-id="${p.id}">Enregistrer</button><button type="button" class="btn" data-action="elo-cancel" data-id="${p.id}">Annuler</button></div>${list}</div>`;
+  }
+
   let ficheOpener = null;
+  let eloDraft = null;      // { id, value } : saisie dans la fiche
+  let eloEdit = null;       // { idÉlève: valeur } : mode « Modifier les Elo » du classement
   function openFiche(id) {
     const c = cl(), st = R.computeStats(c), p = st[id];
     if (!p) return;
@@ -502,6 +522,13 @@
     const close = dlg.querySelector('[data-action="student-close"]');
     if (close) close.focus();
   }
+  // Met à jour la fiche en gardant le motif déjà tapé.
+  function refreshFicheKeepNote() {
+    const note = $('eloNote') ? $('eloNote').value : '';
+    openFiche(eloDraft.id);
+    if ($('eloNote')) $('eloNote').value = note;
+  }
+
   function closeFiche() {
     const dlg = $('studentDialog');
     if (dlg.open) { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); }
@@ -509,7 +536,20 @@
 
   function ranking(c) {
     const r = R.ranks(c);
-    return `${demoNotice(c)}<section class="panel"><h2>Classement général Elo</h2>${rankingTable(r, { note: 'Touchez le nom d\'un élève pour ouvrir sa fiche. Calculé uniquement à partir des séances clôturées, dans l\'ordre chronologique. Égalités départagées par ordre alphabétique (affiché de façon stable). Variation = dernière séance clôturée. Les forfaits et exemptions ne comptent pas pour l\'Elo.' })}</section>`;
+    if (eloEdit) {
+      const changed = Object.keys(eloEdit).filter(id => { const p = r.find(x => x.id === id); return p && Math.round(eloEdit[id]) !== Math.round(p.elo); }).length;
+      return `${demoNotice(c)}<section class="panel"><div class="row between"><h2>Modifier les Elo</h2>
+        <div class="actions"><button type="button" class="btn primary" data-action="elo-bulk-save" ${changed ? '' : 'disabled'}>Enregistrer (${changed} modification${changed > 1 ? 's' : ''})</button><button type="button" class="btn" data-action="elo-bulk-cancel">Annuler</button></div></div>
+        <p class="muted small">Ajustez avec −10 / +10 ou saisissez une valeur. Les Elo sont fixés maintenant, après la dernière séance clôturée ; les séances suivantes partiront de ces valeurs. Chaque ajustement reste visible (✎) dans la fiche de l'élève et peut y être annulé.</p>
+        <div class="tablewrap"><table><thead><tr><th>Rang</th><th>Élève</th><th>Elo calculé</th><th>Nouvel Elo</th></tr></thead><tbody>${r.map((p, i) => {
+          const v = eloEdit[p.id] != null ? eloEdit[p.id] : p.elo, diff = Math.round(v) !== Math.round(p.elo);
+          return `<tr class="${diff ? 'edited' : ''}"><td>${i + 1}</td><td>${esc(p.name)}</td><td>${fmt(p.elo)}</td><td><div class="elo-row-edit">
+            <button type="button" class="btn mini" data-action="elo-bulk-step" data-id="${p.id}" data-delta="-10" aria-label="${esc(p.name)} : −10">−10</button>
+            <label class="sr-only" for="eb_${p.id}">Nouvel Elo de ${esc(p.name)}</label><input id="eb_${p.id}" type="number" inputmode="numeric" min="100" max="3000" value="${Math.round(v)}" data-action="elo-bulk-input" data-id="${p.id}">
+            <button type="button" class="btn mini" data-action="elo-bulk-step" data-id="${p.id}" data-delta="10" aria-label="${esc(p.name)} : +10">+10</button>${diff ? `<span class="badge">${v - p.elo >= 0 ? '+' : ''}${fmt(v - p.elo)}</span>` : ''}</div></td></tr>`;
+        }).join('')}</tbody></table></div></section>`;
+    }
+    return `${demoNotice(c)}<section class="panel"><div class="row between"><h2>Classement général Elo</h2><button type="button" class="btn" data-action="elo-bulk-edit">✎ Modifier les Elo</button></div>${rankingTable(r, { note: 'Touchez le nom d\'un élève pour ouvrir sa fiche. Calculé uniquement à partir des séances clôturées, dans l\'ordre chronologique. Égalités départagées par ordre alphabétique (affiché de façon stable). Variation = dernière séance clôturée. Les forfaits et exemptions ne comptent pas pour l\'Elo.' })}</section>`;
   }
 
   /* ---------------- Groupes de travail (hors séance) ---------------- */
@@ -1083,7 +1123,39 @@
   const handlers = {
     'tab': el => { tab = el.dataset.tab; render(); window.scrollTo(0, 0); },
     'student': el => openFiche(el.dataset.id),
-    'student-close': () => closeFiche(),
+    'student-close': () => { eloDraft = null; closeFiche(); },
+    'elo-edit': el => { const p = R.computeStats(cl())[el.dataset.id]; eloDraft = { id: p.id, value: Math.round(p.elo) }; openFiche(p.id); },
+    'elo-step': el => { const inp = $('eloValue'); eloDraft.value = Math.max(100, Math.min(3000, Math.round(Number(inp.value) || eloDraft.value) + Number(el.dataset.delta))); refreshFicheKeepNote(); },
+    'elo-cancel': el => { eloDraft = null; openFiche(el.dataset.id); },
+    'elo-save': el => {
+      const c = cl(), v = Number($('eloValue').value), note = $('eloNote') ? $('eloNote').value : '';
+      const r = R.setElo(c, { [el.dataset.id]: v }, note);
+      if (!r.ok) return toast(r.error, true);
+      eloDraft = null; save(); render(); openFiche(el.dataset.id); toast('Elo fixé à ' + Math.round(v));
+    },
+    'elo-remove': el => {
+      if (!confirm('Annuler cet ajustement ? L\'Elo redevient celui calculé à partir des matchs.')) return;
+      const c = cl(), r = R.removeEloAdjustment(c, el.dataset.id);
+      if (!r.ok) return toast(r.error, true);
+      save(); render(); openFiche(el.dataset.student); toast('Ajustement annulé');
+    },
+    'elo-bulk-edit': () => { eloEdit = {}; render(); },
+    'elo-bulk-cancel': () => { eloEdit = null; render(); },
+    'elo-bulk-step': el => {
+      const p = R.computeStats(cl())[el.dataset.id], cur = eloEdit[p.id] != null ? eloEdit[p.id] : Math.round(p.elo);
+      eloEdit[p.id] = Math.max(100, Math.min(3000, Math.round(cur) + Number(el.dataset.delta)));
+      render();
+    },
+    'elo-bulk-save': () => {
+      const c = cl(), st = R.computeStats(c), values = {};
+      Object.keys(eloEdit).forEach(id => { if (st[id] && Math.round(eloEdit[id]) !== Math.round(st[id].elo)) values[id] = eloEdit[id]; });
+      const n = Object.keys(values).length;
+      if (!n) return;
+      if (!confirm('Fixer l\'Elo de ' + n + ' élève(s) ? Les séances suivantes partiront de ces valeurs.')) return;
+      const r = R.setElo(c, values, 'Modification du classement');
+      if (!r.ok) return toast(r.error, true);
+      eloEdit = null; save(); render(); toast(n + ' Elo modifié(s)');
+    },
     'wg-courts': el => {
       const c = cl(), cur = c.workGroups ? c.workGroups.courts : c.courts;
       act(() => R.buildWorkGroups(c, { courts: cur + Number(el.dataset.delta) }));
@@ -1347,6 +1419,8 @@
     if (el.id === 'partition') { partitionKey = el.value; render(); return; }
     if (el.id === 'importFile') { importJSON(el); return; }
     const c = cl();
+    if (el.dataset.action === 'elo-input' && eloDraft) { const v = Number(el.value); if (Number.isFinite(v)) { eloDraft.value = Math.max(100, Math.min(3000, v)); refreshFicheKeepNote(); } return; }
+    if (el.dataset.action === 'elo-bulk-input' && eloEdit) { const v = Number(el.value); if (Number.isFinite(v)) { eloEdit[el.dataset.id] = Math.max(100, Math.min(3000, v)); render(); } return; }
     if (el.dataset.action === 'wg-mode') { act(() => R.buildWorkGroups(c, { mode: el.value })); return; }
     if (el.dataset.action === 'wg-absent') {
       const prev = c.workGroups ? c.workGroups.absent : [];
@@ -1376,7 +1450,7 @@
   $('studentDialog').addEventListener('click', e => { if (e.target.id === 'studentDialog') closeFiche(); });
   $('scoreDialog').addEventListener('click', e => { if (e.target.id === 'scoreDialog') closeScoreSheet(); });
   $('scoreDialog').addEventListener('close', () => { ss = null; });
-  $('studentDialog').addEventListener('close', () => { if (ficheOpener && ficheOpener.focus && document.contains(ficheOpener)) ficheOpener.focus(); ficheOpener = null; });
+  $('studentDialog').addEventListener('close', () => { eloDraft = null; if (ficheOpener && ficheOpener.focus && document.contains(ficheOpener)) ficheOpener.focus(); ficheOpener = null; });
 
   document.addEventListener('submit', e => {
     if (e.target.dataset && e.target.dataset.form === 'scan-code') {

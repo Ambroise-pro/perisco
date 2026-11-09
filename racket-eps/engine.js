@@ -108,7 +108,23 @@
       };
     });
     const closed = c.sessions.filter(s => s.status === 'closed').sort((a, b) => a.seq - b.seq);
+    // Ajustements manuels : « fixer l'Elo à X après la séance N » (N = 0 : début du cycle).
+    // Appliqués au bon moment de la chronologie, ils restent valables si une séance passée est corrigée.
+    const adjustments = (c.eloAdjustments || []).slice().sort((a, b) => (a.afterSeq - b.afterSeq) || (a.at - b.at));
+    let ai = 0;
+    const applyAdjustments = (limitSeq) => {
+      while (ai < adjustments.length && adjustments[ai].afterSeq < limitSeq) {
+        const adj = adjustments[ai++], p = map[adj.studentId];
+        if (!p) continue;
+        const delta = adj.value - p.elo;
+        p.elo = adj.value;
+        p.lastDelta = delta;
+        p.manual = { value: adj.value, afterSeq: adj.afterSeq, id: adj.id };
+        p.history.push({ seq: adj.afterSeq, manual: true, adjustmentId: adj.id, date: adj.date || null, note: adj.note || '', elo: adj.value, delta, rank: null, absent: false });
+      }
+    };
     closed.forEach(s => {
+      applyAdjustments(s.seq);
       const start = {};
       Object.keys(map).forEach(id => { start[id] = map[id].elo; });
       const delta = sessionDeltas(s.matches, start, s.k != null ? s.k : (c.k != null ? c.k : 32));
@@ -143,7 +159,47 @@
         p.history.push({ seq: s.seq, sessionId: s.id, date: s.date, elo: p.elo, delta: delta[p.id] || 0, rank: i + 1, absent: (s.absent || []).includes(p.id) });
       });
     });
+    applyAdjustments(Infinity);
+    // Rang des points d'ajustement (après application)
+    const finalOrder = Object.values(map).sort(cmpRank);
+    finalOrder.forEach((p, i) => p.history.forEach(h => { if (h.manual && h.rank == null) h.rank = i + 1; }));
     return map;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Elo saisi manuellement par l'enseignant
+   * ------------------------------------------------------------------ */
+  function lastClosedSeq(c) {
+    return Math.max(0, ...c.sessions.filter(s => s.status === 'closed').map(s => s.seq));
+  }
+
+  /**
+   * Fixe l'Elo d'un ou plusieurs élèves maintenant (après la dernière séance clôturée).
+   * values = { idÉlève: nouvelElo }. Un ajustement au même moment pour le même élève est remplacé.
+   */
+  function setElo(c, values, note) {
+    const entries = Object.entries(values || {});
+    if (!entries.length) return fail('Aucune valeur.');
+    for (const [id, v] of entries) {
+      if (!c.students.some(p => p.id === id)) return fail('Élève inconnu.');
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 100 || n > 3000) return fail('Elo entre 100 et 3000.');
+    }
+    // Une séance en cours garde les Elo de son début : l'ajustement s'applique après elle.
+    const after = lastClosedSeq(c);
+    c.eloAdjustments = (c.eloAdjustments || []).filter(a => !(a.afterSeq === after && values[a.studentId] != null));
+    const at = Date.now();
+    entries.forEach(([id, v], i) => c.eloAdjustments.push({
+      id: uid(), studentId: id, value: Math.round(Number(v) * 10) / 10, afterSeq: after, at: at + i,
+      date: new Date().toISOString().slice(0, 10), note: String(note || '').slice(0, 120)
+    }));
+    return { ok: true, count: entries.length, afterSeq: after };
+  }
+
+  function removeEloAdjustment(c, id) {
+    const before = (c.eloAdjustments || []).length;
+    c.eloAdjustments = (c.eloAdjustments || []).filter(a => a.id !== id);
+    return c.eloAdjustments.length < before ? { ok: true } : fail('Ajustement introuvable.');
   }
 
   function cmpRank(a, b) {
@@ -1317,6 +1373,9 @@
         else s.matches.forEach(m => { [m.a, m.b].forEach(x => { if (x && !ids.has(x)) errors.push('Match avec un élève inconnu dans ' + c.name); }); });
       });
       if (c.sessions.filter(s => s.status !== 'closed').length > 1) errors.push('Plusieurs séances actives dans ' + c.name);
+      (c.eloAdjustments || []).forEach(a => {
+        if (!ids.has(a.studentId) || !Number.isFinite(a.value)) errors.push('Ajustement d\'Elo invalide dans ' + c.name);
+      });
     });
     return { ok: errors.length === 0, errors: Array.from(new Set(errors)) };
   }
@@ -1497,6 +1556,7 @@
   return {
     SCHEMA_VERSION, MODES, GROUP_MODES,
     uid, clone, isSporting, winnerOf, loserOf, validateScore, expected, sessionDeltas, computeStats, ranks,
+    setElo, removeEloAdjustment, lastClosedSeq,
     activeSession, createSession, presentIds, proposePlacement, setAbsent, moveToGroup, shiftPosition, placementWarnings,
     balancedGroups, groupCount, makeGroups, startSession, roundRobin, autoAssign, matchState,
     totalCourts, availableCourts, setSessionCourts, setCourtClosed,

@@ -667,3 +667,55 @@ test('Sauvegardes : export d\'une classe, import par fusion sans écraser les au
   assert.ok(cp.db.classes.some(c => /copie importée/.test(c.name)));
   assert.equal(db.classes.length, 2, 'les données d\'origine ne sont pas modifiées par la simulation');
 });
+
+test('Elo saisi manuellement : appliqué au bon moment, conservé après correction, annulable', () => {
+  const c = makeClass(6, 3);
+  const r = rng(11);
+  const s1 = newSession(c, { mode: 'pools', groupSize: 3 });
+  R.startSession(c, s1); playSession(c, s1, r); R.closeSession(c, s1);
+  const A = c.students[0].id, B = c.students[1].id;
+  const before = R.computeStats(c);
+  // Fixer l'Elo de A à 1200 et de B à 850 après la séance 1
+  const res = R.setElo(c, { [A]: 1200, [B]: 850 }, 'Niveau connu (club)');
+  assert.ok(res.ok && res.afterSeq === 1);
+  let st = R.computeStats(c);
+  assert.equal(st[A].elo, 1200); assert.equal(st[B].elo, 850);
+  assert.equal(st[c.students[2].id].elo, before[c.students[2].id].elo, 'les autres élèves ne changent pas');
+  const h = st[A].history[st[A].history.length - 1];
+  assert.ok(h.manual && h.elo === 1200 && h.note === 'Niveau connu (club)');
+  // La séance suivante part de ces valeurs (Elo de début de séance)
+  const s2 = newSession(c, { mode: 'pools', groupSize: 3 });
+  R.startSession(c, s2); playSession(c, s2, r); R.closeSession(c, s2);
+  st = R.computeStats(c);
+  const s2Delta = st[A].history.find(x => x.seq === 2).delta;
+  assert.ok(Math.abs(st[A].elo - (1200 + s2Delta)) < 1e-9);
+  // Corriger la séance 1 : l'ajustement reste appliqué juste après elle
+  R.reopenSession(c, s1.id);
+  const m = s1.matches.find(x => x.a === A || x.b === A);
+  R.recordResult(c, s1, m.id, { sa: m.sb, sb: m.sa });
+  R.closeSession(c, s1);
+  st = R.computeStats(c);
+  assert.equal(st[A].history.find(x => x.manual).elo, 1200);
+  assert.ok(Math.abs(st[A].elo - (1200 + st[A].history.find(x => x.seq === 2).delta)) < 1e-9);
+  // Remplacer un ajustement au même moment, puis l'annuler
+  R.setElo(c, { [A]: 1300 });
+  st = R.computeStats(c);
+  assert.equal(st[A].elo, 1300);
+  assert.equal(c.eloAdjustments.filter(a => a.studentId === A).length, 2, 'un ajustement après la séance 1, un après la séance 2');
+  R.removeEloAdjustment(c, c.eloAdjustments.find(a => a.studentId === A && a.afterSeq === 2).id);
+  assert.ok(Math.abs(R.computeStats(c)[A].elo - (1200 + st[A].history.find(x => x.seq === 2).delta)) < 1e-9);
+  // Refus des valeurs invalides ; sauvegarde valide
+  assert.equal(R.setElo(c, { [A]: 50 }).ok, false);
+  assert.equal(R.setElo(c, { zz: 1000 }).ok, false);
+  const db = R.emptyDB(); db.classes.push(c);
+  assert.ok(R.validateDB(JSON.parse(JSON.stringify(db))).ok);
+});
+
+test('Elo manuel avant toute séance : point de départ du cycle', () => {
+  const c = makeClass(4, 2);
+  const A = c.students[0].id;
+  assert.equal(R.setElo(c, { [A]: 1150 }).afterSeq, 0);
+  assert.equal(R.computeStats(c)[A].elo, 1150);
+  const s = newSession(c, { mode: 'pools', groupSize: 4 });
+  assert.equal(s.positions[0], A, 'placement proposé selon l\'Elo saisi');
+});
