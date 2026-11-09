@@ -91,6 +91,8 @@ async function scenario(browser, label, ctxOpts) {
   await page.click('.court-card .cd-hit >> nth=0');
   await page.waitForSelector('#scoreDialog[open] .ss-player');
   check(await page.$('#scoreDialog .ss-tie') !== null, 'saisie : validation bloquée tant que le score est à égalité');
+  const ssStakes = await page.$$eval('#scoreDialog .stake', n => n.map(x => x.textContent));
+  check(ssStakes.length === 2 && ssStakes.every(t => /Elo \d+/.test(t) && /Victoire \+\d+/.test(t) && /Défaite −\d+/.test(t)), 'saisie : Elo des joueurs et gain/perte possibles affichés (' + ssStakes[0] + ')');
   await page.click('#scoreDialog [data-action="ss-target"][data-side="sa"]');
   for (let k = 0; k < 4; k++) await page.click('#scoreDialog [data-action="ss-step"][data-side="sb"][data-delta="1"]');
   check((await page.textContent('#scoreDialog .ss-validate')).includes('11 – 4'), 'saisie au toucher : 11 – 4 sans clavier');
@@ -377,6 +379,9 @@ async function qrFlow(browser) {
   await t.goto(href);
   await t.waitForSelector('.sheet-player');
   const names = await t.$$eval('.sheet-name', n => n.map(x => x.textContent));
+  const shStakes = await t.$$eval('.sheet-player .stake', n => n.map(x => x.textContent));
+  check(shStakes.length === 2 && shStakes.every(x => /Victoire \+\d+/.test(x) && /Défaite −\d+/.test(x)), 'feuille de match : Elo et enjeu de chaque joueur');
+  await t.screenshot({ path: path.join(OUT, 'feuille-match-enjeu.png') });
   for (let i = 0; i < 11; i++) await t.click('[data-action="sheet-step"][data-side="a"][data-delta="1"]');
   for (let i = 0; i < 5; i++) await t.click('[data-action="sheet-step"][data-side="b"][data-delta="1"]');
   await t.click('[data-action="sheet-step"][data-side="b"][data-delta="-1"]');
@@ -432,6 +437,8 @@ async function qrFlow(browser) {
   await pt.waitForSelector('.pool-match');
   const nPool = await pt.$$eval('.pool-match', n => n.length);
   check(nPool === 6, 'tablette : les 6 matchs de la poule affichés');
+  check((await pt.$$('.pool-match .stake')).length === 12, 'feuille de poule : Elo et gain/perte possibles pour chaque joueur de chaque match');
+  await pt.screenshot({ path: path.join(OUT, 'feuille-poule-enjeu.png') });
   for (let i = 0; i < nPool; i++) {
     if (i === 2) {
       await pt.click('.pool-grid > .pool-match >> nth=2 >> summary');

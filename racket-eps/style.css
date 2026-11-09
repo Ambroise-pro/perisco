@@ -352,3 +352,14 @@ input,select,textarea{min-height:52px;font-size:17px;border-radius:12px}
 .elo-row-edit{display:flex;gap:8px;align-items:center}
 .elo-row-edit input{width:100px;text-align:center;font-weight:700}
 tr.edited td{background:#13342b}
+
+/* Enjeu Elo sur les feuilles de match */
+.stake { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; font-size: 15px; font-weight: 600; }
+.stake > span { padding: 3px 9px; border-radius: 999px; background: rgba(127,127,127,.14); }
+.stake .stake-win { color: #67e5b3; background: rgba(103,229,179,.14); }
+.stake .stake-loss { color: #ff9eaa; background: rgba(255,158,170,.13); }
+.stake.mini { font-size: 12.5px; gap: 4px; margin: 3px 0 0; }
+.stake.mini > span { padding: 1px 7px; }
+.pm-name { display: flex; flex-direction: column; align-items: flex-start; }
+.elo-explain { margin-top: 16px; }
+.elo-explain-body { padding: 8px 4px 0; line-height: 1.5; }

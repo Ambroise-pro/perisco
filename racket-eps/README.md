@@ -121,12 +121,23 @@ Les effectifs diffèrent au plus d'un élève. Un appel permet d'exclure les abs
 ## Fiche élève
 La fiche s'ouvre dans une **fenêtre** (pop-up) quand on touche le nom d'un élève, depuis le classement, la liste des élèves ou les groupes de travail. Elle se ferme avec ✕, avec la touche Échap ou en touchant le fond.
 
+## Comment fonctionne l'Elo
+- Chaque élève commence le cycle à 1000 (réglable). Après chaque match, le vainqueur prend des points au perdant : ce que l'un gagne, l'autre le perd.
+- Le gain dépend de l'écart d'Elo : battre un mieux classé rapporte beaucoup, battre un moins bien classé rapporte peu. Un match vaut au maximum K points (32 par défaut), et 16 entre deux élèves de même Elo.
+- Exemple (K = 32) : 1100 contre 1000. Si le 1100 gagne : +12 / −12. Si le 1000 gagne : +20 / −20.
+- Pendant une séance, l'Elo est figé : chaque match utilise les Elo de début de séance et les variations sont additionnées à la clôture. Le score exact, les forfaits, les exemptions et les absences ne changent pas l'Elo.
+- Formule : E = 1 / (1 + 10^((Elo adverse − Elo) / 400)) ; variation = K × (résultat − E).
+- Cette explication est aussi dans l'application : Classement → « Comment fonctionne l'Elo ? ».
+
+### Enjeu affiché sur les feuilles de match
+La saisie du score (enseignant), la feuille de match et la feuille de poule (tablettes des élèves) affichent pour chaque joueur son **Elo de début de séance**, les points gagnés **en cas de victoire** et perdus **en cas de défaite**.
+
 ## Elo saisi à la main
 L'enseignant peut **fixer l'Elo** d'un élève quand il le souhaite (niveau connu d'avance, erreur à rattraper, élève arrivé en cours de cycle…) :
 - **Depuis la fiche élève** : « ✎ Modifier l'Elo », puis boutons −50 / −10 / +10 / +50 (pas besoin du clavier), note facultative, « Enregistrer ».
 - **Depuis le classement** : « ✎ Modifier les Elo » permet d'en changer plusieurs d'un coup, puis « Enregistrer » (confirmation demandée).
 
-Un ajustement signifie « Elo fixé à X après la séance N » (N = 0 avant toute séance). Il s'insère au bon endroit de la chronologie : si une séance passée est corrigée, le recalcul le conserve à sa place, sans double comptage. Une séance en cours garde les Elo de son début ; l'ajustement s'applique après elle. Les ajustements sont marqués ✎ dans le classement, l'historique et les graphiques, et chacun peut être annulé depuis la fiche (« Annuler cet ajustement »).
+Un ajustement signifie « Elo fixé à X après la séance N » (N = 0 avant toute séance). Il s'insère au bon endroit de la chronologie : si une séance passée est corrigée, le recalcul le conserve à sa place, sans double comptage. Une séance déjà lancée garde les Elo de son début (l'enjeu affiché ne change pas) ; l'ajustement s'applique après sa clôture, mais apparaît tout de suite au classement. Les ajustements sont marqués ✎ dans le classement, l'historique et les graphiques, et chacun peut être annulé depuis la fiche (« Annuler cet ajustement »).
 
 ## QR codes : autonomie des élèves sur tablette
 Les données restent **sur l'appareil de l'enseignant**, sans serveur. Les résultats passent donc par un aller-retour de QR codes :

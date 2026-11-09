@@ -75,6 +75,16 @@
     return 1 / (1 + Math.pow(10, (rb - ra) / 400));
   }
 
+  /**
+   * Enjeu d'un match : ce que chaque joueur gagne en cas de victoire et perd en cas de défaite,
+   * calculé avec les Elo de début de séance (règle 4). Gain du vainqueur = perte du perdant.
+   */
+  function stakes(ra, rb, k) {
+    k = Number.isFinite(k) ? k : 32;
+    const ea = expected(ra, rb);
+    return { pa: ea, aWin: k * (1 - ea), aLoss: -k * ea, bWin: k * ea, bLoss: -k * (1 - ea) };
+  }
+
   /** Variations Elo d'une séance : somme des contributions, calculées avec les Elo de début. */
   function sessionDeltas(matches, startElo, k) {
     const delta = {};
@@ -169,6 +179,27 @@
   /* ------------------------------------------------------------------ *
    * Elo saisi manuellement par l'enseignant
    * ------------------------------------------------------------------ */
+  /** Elo de début d'une séance (séances clôturées antérieures + ajustements manuels placés avant elle). */
+  function sessionStartElo(c, s) {
+    const sub = Object.assign({}, c, {
+      sessions: c.sessions.filter(x => x.status === 'closed' && x.seq < s.seq),
+      eloAdjustments: (c.eloAdjustments || []).filter(a => a.afterSeq < s.seq)
+    });
+    const st = computeStats(sub), out = {};
+    Object.keys(st).forEach(id => { out[id] = st[id].elo; });
+    return out;
+  }
+
+  /** Enjeu Elo d'un match de la séance : { ra, rb, k, aWin, aLoss, bWin, bLoss } ou null. */
+  function matchStakes(c, s, m, start) {
+    if (!m || !m.a || !m.b) return null;
+    start = start || sessionStartElo(c, s);
+    const ra = start[m.a], rb = start[m.b];
+    if (ra == null || rb == null) return null;
+    const k = s.k != null ? s.k : (c.k != null ? c.k : 32);
+    return Object.assign({ ra, rb, k }, stakes(ra, rb, k));
+  }
+
   function lastClosedSeq(c) {
     return Math.max(0, ...c.sessions.filter(s => s.status === 'closed').map(s => s.seq));
   }
@@ -185,8 +216,9 @@
       const n = Number(v);
       if (!Number.isFinite(n) || n < 100 || n > 3000) return fail('Elo entre 100 et 3000.');
     }
-    // Une séance en cours garde les Elo de son début : l'ajustement s'applique après elle.
-    const after = lastClosedSeq(c);
+    // Une séance lancée garde les Elo de son début : l'ajustement s'applique après elle.
+    const cur = activeSession(c);
+    const after = cur && cur.status === 'playing' && !cur.reopened ? cur.seq : lastClosedSeq(c);
     c.eloAdjustments = (c.eloAdjustments || []).filter(a => !(a.afterSeq === after && values[a.studentId] != null));
     const at = Date.now();
     entries.forEach(([id, v], i) => c.eloAdjustments.push({
@@ -1059,6 +1091,7 @@
       return { ok: true, restored: true };
     }
     c.sessions = c.sessions.filter(x => x !== s);
+    (c.eloAdjustments || []).forEach(a => { if (a.afterSeq === s.seq) a.afterSeq = lastClosedSeq(c); });
     return { ok: true, restored: false };
   }
 
@@ -1180,7 +1213,10 @@
   /** Données de la feuille de match (affichée sur la tablette, sans accès à la base). */
   function sheetData(c, s, m) {
     const nm = id => (c.students.find(p => p.id === id) || {}).name || '?';
-    return { v: 1, s: shortId(s.id), m: shortId(m.id), a: nm(m.a), b: nm(m.b), t: m.court || null, g: s.target || 11, k: ensureQrToken(s), n: s.seq };
+    const d = { v: 1, s: shortId(s.id), m: shortId(m.id), a: nm(m.a), b: nm(m.b), t: m.court || null, g: s.target || 11, k: ensureQrToken(s), n: s.seq };
+    const st = matchStakes(c, s, m);
+    if (st) { d.ea = Math.round(st.ra * 10) / 10; d.eb = Math.round(st.rb * 10) / 10; d.K = st.k; } // Elo de début de séance (enjeu affiché)
+    return d;
   }
   function encodeSheet(d) { return utf8ToB64url(JSON.stringify(d)); }
   function decodeSheet(str) {
@@ -1259,6 +1295,8 @@
     return {
       v: 1, kind: 'pool', s: shortId(s.id), g: gi, k: ensureQrToken(s), n: s.seq, t: s.target || 11,
       p: g.map(nm),
+      e: (() => { const st = sessionStartElo(c, s); return g.map(id => Math.round((st[id] != null ? st[id] : 1000) * 10) / 10); })(),
+      K: s.k != null ? s.k : (c.k != null ? c.k : 32),
       m: groupMatches(s, gi).map(m => idx(m.a) + idx(m.b)).join('')
     };
   }
@@ -1591,7 +1629,7 @@
   return {
     SCHEMA_VERSION, MODES, GROUP_MODES,
     uid, clone, isSporting, winnerOf, loserOf, validateScore, expected, sessionDeltas, computeStats, ranks,
-    setElo, removeEloAdjustment, lastClosedSeq,
+    setElo, removeEloAdjustment, lastClosedSeq, stakes, sessionStartElo, matchStakes,
     activeSession, createSession, presentIds, proposePlacement, setPlacementOptions, regroupSession, groupsAverageElo, setAbsent, moveToGroup, shiftPosition, placementWarnings,
     balancedGroups, groupCount, makeGroups, startSession, roundRobin, autoAssign, matchState,
     totalCourts, availableCourts, setSessionCourts, setCourtClosed,

@@ -749,3 +749,31 @@ test('Poules : répartition automatique par niveau Elo ou équilibrée, et refai
   assert.equal(R.regroupSession(c, s).ok, false, 'interdit dès qu\'un résultat est saisi');
   assert.equal(R.setPlacementOptions(c, s, { distribution: 'balanced' }).ok, false);
 });
+
+test('Enjeu Elo des feuilles de match : gain et perte possibles, avec les Elo de début de séance', () => {
+  const st = R.stakes(1100, 1000, 32);
+  assert.ok(Math.abs(st.aWin + st.bLoss) < 1e-9 && Math.abs(st.bWin + st.aLoss) < 1e-9, 'ce que l\'un gagne, l\'autre le perd');
+  assert.ok(st.bWin > st.aWin, 'battre un mieux classé rapporte plus');
+  assert.equal(Math.round(st.aWin), 12); assert.equal(Math.round(st.bWin), 20);
+  const eq = R.stakes(1000, 1000, 32);
+  assert.equal(eq.aWin, 16); assert.equal(eq.aLoss, -16);
+
+  const c = R.createDemoClass({ students: 8, sessions: 2, seed: 'enjeu' });
+  const s = R.createSession(c, { mode: 'pools', groupSize: 4 }).session;
+  R.startSession(c, s);
+  const m = s.matches[0];
+  const before = R.matchStakes(c, s, m);
+  // Ajustement manuel pendant la séance : la séance garde ses Elo de début
+  assert.ok(R.setElo(c, { [m.a]: 1500 }).ok);
+  assert.equal(R.computeStats(c)[m.a].elo, 1500, 'visible tout de suite au classement');
+  assert.equal(R.matchStakes(c, s, m).ra, before.ra, 'enjeu inchangé pendant la séance');
+  const d = R.sheetData(c, s, m);
+  assert.equal(d.ea, Math.round(before.ra * 10) / 10);
+  const pd = R.decodePoolSheet(R.encodeSheet(R.poolSheetData(c, s, m.group)));
+  assert.equal(pd.e.length, s.groups[m.group].length);
+  s.matches.forEach(x => R.recordResult(c, s, x.id, { sa: 11, sb: 5 }));
+  assert.ok(R.closeSession(c, s).ok);
+  const h = R.computeStats(c)[m.a].history;
+  assert.ok(h[h.length - 1].manual && h[h.length - 1].elo === 1500, 'l\'Elo fixé s\'applique après la séance');
+  assert.equal(h[h.length - 2].delta, Math.round(0) + h[h.length - 2].delta);
+});

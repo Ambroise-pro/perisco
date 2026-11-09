@@ -450,6 +450,12 @@
 
   /* ---------------- Saisie du score : grand panneau, sans clavier ---------------- */
   let ss = null; // { id, sa, sb }
+  /* Enjeu Elo affiché sur les feuilles : gain en cas de victoire, perte en cas de défaite. */
+  const signed = v => { const r = Math.round(v); return (r > 0 ? '+' : r < 0 ? '−' : '±') + Math.abs(r); };
+  function stakeHTML(elo, win, loss, cls) {
+    return `<div class="stake ${cls || ''}"><span class="stake-elo">Elo ${Math.round(elo)}</span><span class="stake-win">Victoire ${signed(win)}</span><span class="stake-loss">Défaite ${signed(loss)}</span></div>`;
+  }
+
   function openScoreSheet(id) {
     const c = cl(), s = R.activeSession(c), m = s && s.matches.find(x => x.id === id);
     if (!m || !m.a || !m.b) return;
@@ -463,8 +469,10 @@
     const c = cl(), s = R.activeSession(c), m = s && ss && s.matches.find(x => x.id === ss.id);
     if (!m) { closeScoreSheet(); return; }
     const target = s.target || 11, tie = ss.sa === ss.sb;
+    const stk = R.matchStakes(c, s, m);
     const side = (k, id, dot) => { const v = ss[k], other = ss[k === 'sa' ? 'sb' : 'sa'], n = nameOf(c, id); return `<div class="ss-player ${v > other ? 'lead' : ''}">
       <div class="ss-name"><span class="ss-dot" style="background:${dot}" aria-hidden="true">${esc(initials(n))}</span>${esc(n)}</div>
+      ${stk ? (k === 'sa' ? stakeHTML(stk.ra, stk.aWin, stk.aLoss) : stakeHTML(stk.rb, stk.bWin, stk.bLoss)) : ''}
       <div class="ss-score"><button type="button" class="btn ss-btn" data-action="ss-step" data-side="${k}" data-delta="-1" aria-label="Retirer un point à ${esc(n)}">−</button>
       <output aria-live="polite">${v}</output>
       <button type="button" class="btn primary ss-btn" data-action="ss-step" data-side="${k}" data-delta="1" aria-label="Ajouter un point à ${esc(n)}">+</button></div>
@@ -480,6 +488,16 @@
           <button type="button" class="btn" data-action="ss-forfeit" data-loser="${m.b}">Forfait de ${esc(nameOf(c, m.b))}</button>
           <button type="button" class="btn" data-action="qr-match" data-id="${m.id}">${s.mode === 'pools' ? 'QR de la poule ' + (m.group + 1) : 'QR de la feuille de match'}</button>
           ${m.done ? '<button type="button" class="btn danger" data-action="ss-clear">Effacer le résultat</button>' : ''}</div></details></div></div>`;
+  }
+
+  function eloExplainer(c) {
+    const k = c.k != null ? c.k : 32, ex = R.stakes(1100, 1000, k);
+    return `<details class="more elo-explain"><summary class="btn">Comment fonctionne l'Elo ?</summary><div class="elo-explain-body">
+      <p>Chaque élève commence le cycle à <b>${Number.isFinite(c.initialElo) ? c.initialElo : 1000}</b>. Après chaque match, le vainqueur prend des points au perdant : <b>ce que l'un gagne, l'autre le perd</b>.</p>
+      <p>Le nombre de points dépend de l'écart d'Elo : battre un joueur <b>mieux classé</b> rapporte beaucoup, battre un joueur moins bien classé rapporte peu. Au maximum, un match vaut <b>${k} points</b> (coefficient K).</p>
+      <p>Exemple : un élève à 1100 contre un élève à 1000. Si le 1100 gagne : <b>${signed(ex.aWin)}</b> pour lui, ${signed(ex.bLoss)} pour l'autre. Si le 1000 gagne (surprise) : <b>${signed(ex.bWin)}</b> pour lui, ${signed(ex.aLoss)} pour l'autre.</p>
+      <p>Pendant une séance, l'Elo ne bouge pas : chaque match est calculé avec les Elo du <b>début de séance</b>, et les points sont additionnés à la clôture. L'ordre des matchs ne change donc rien. Le score exact (11-9 ou 11-2) ne compte pas, seulement la victoire. Forfaits, exemptions et absences ne changent pas l'Elo.</p>
+      <p class="muted small">Formule : probabilité de gagner E = 1 / (1 + 10^((Elo adverse − Elo) / 400)) ; variation = K × (résultat − E), avec résultat = 1 si victoire, 0 si défaite.</p></div></details>`;
   }
 
   /* ---------------- Classement et fiche ---------------- */
@@ -559,7 +577,7 @@
             <button type="button" class="btn mini" data-action="elo-bulk-step" data-id="${p.id}" data-delta="10" aria-label="${esc(p.name)} : +10">+10</button>${diff ? `<span class="badge">${v - p.elo >= 0 ? '+' : ''}${fmt(v - p.elo)}</span>` : ''}</div></td></tr>`;
         }).join('')}</tbody></table></div></section>`;
     }
-    return `${demoNotice(c)}<section class="panel"><div class="row between"><h2>Classement général Elo</h2><button type="button" class="btn" data-action="elo-bulk-edit">✎ Modifier les Elo</button></div>${rankingTable(r, { note: 'Touchez le nom d\'un élève pour ouvrir sa fiche. Calculé uniquement à partir des séances clôturées, dans l\'ordre chronologique. Égalités départagées par ordre alphabétique (affiché de façon stable). Variation = dernière séance clôturée. Les forfaits et exemptions ne comptent pas pour l\'Elo.' })}</section>`;
+    return `${demoNotice(c)}<section class="panel"><div class="row between"><h2>Classement général Elo</h2><button type="button" class="btn" data-action="elo-bulk-edit">✎ Modifier les Elo</button></div>${rankingTable(r, { note: 'Touchez le nom d\'un élève pour ouvrir sa fiche. Calculé uniquement à partir des séances clôturées, dans l\'ordre chronologique. Égalités départagées par ordre alphabétique (affiché de façon stable). Variation = dernière séance clôturée. Les forfaits et exemptions ne comptent pas pour l\'Elo.' })}${eloExplainer(c)}</section>`;
   }
 
   /* ---------------- Groupes de travail (hors séance) ---------------- */
@@ -902,7 +920,9 @@
           <div class="pm-result">${esc(txt)}</div>
           <button class="btn" data-action="pool-reopen" data-i="${i}">Modifier</button></div>`;
       }
-      const row = (side, idx, val) => `<div class="pm-row"><span class="pm-name">${esc(d.p[idx])}</span>
+      const hasElo = Array.isArray(d.e) && Number.isFinite(d.e[a]) && Number.isFinite(d.e[b]);
+      const stk = hasElo ? R.stakes(d.e[a], d.e[b], d.K) : null;
+      const row = (side, idx, val) => `<div class="pm-row"><span class="pm-name">${esc(d.p[idx])}${stk ? (side === 'a' ? stakeHTML(d.e[a], stk.aWin, stk.aLoss, 'mini') : stakeHTML(d.e[b], stk.bWin, stk.bLoss, 'mini')) : ''}</span>
         <span class="pm-score"><button class="btn pm-btn" data-action="pool-step" data-i="${i}" data-side="${side}" data-delta="-1" aria-label="Retirer un point à ${esc(d.p[idx])}">−</button>
         <output aria-live="polite">${val}</output>
         <button class="btn pm-btn primary" data-action="pool-step" data-i="${i}" data-side="${side}" data-delta="1" aria-label="Ajouter un point à ${esc(d.p[idx])}">+</button></span></div>`;
@@ -917,6 +937,7 @@
     $('view').innerHTML = `<section class="panel sheet pool-sheet">${head}
       <div class="row between"><h2 style="margin:0">Tous les matchs de la poule</h2><span class="badge">${done} / ${d.pairs.length} terminés</span></div>
       <div class="pool-rank" aria-label="Victoires dans la poule">${order.map(x => `<span class="bench-chip">${esc(x.n)} · ${x.w} V</span>`).join('')}</div>
+      ${Array.isArray(d.e) ? '<p class="muted small">Sous chaque nom : Elo de début de séance, points Elo gagnés en cas de victoire et perdus en cas de défaite. Battre un joueur mieux classé rapporte plus.</p>' : ''}
       <div class="pool-grid">${cards}</div>
       <button class="btn primary sheet-finish" data-action="pool-finish" ${done ? '' : 'disabled'}>Terminer la poule et afficher le QR de résultat</button>
       <p class="muted small">Les scores ne sont enregistrés qu'après le scan par le professeur. Cette page garde vos scores si elle se recharge.</p></section>`;
@@ -972,7 +993,9 @@
         <button class="btn" data-action="sheet-edit">Modifier le score</button></section>`;
       return;
     }
+    const stk = Number.isFinite(d.ea) && Number.isFinite(d.eb) ? R.stakes(d.ea, d.eb, d.K) : null;
     const row = (side, name, val) => `<div class="sheet-player"><div class="sheet-name">${esc(name)}</div>
+      ${stk ? (side === 'a' ? stakeHTML(d.ea, stk.aWin, stk.aLoss) : stakeHTML(d.eb, stk.bWin, stk.bLoss)) : ''}
       <div class="sheet-score"><button class="btn sheet-btn" data-action="sheet-step" data-side="${side}" data-delta="-1" aria-label="Retirer un point à ${esc(name)}">−</button>
       <output aria-live="polite" aria-label="Score de ${esc(name)}">${val}</output>
       <button class="btn sheet-btn primary" data-action="sheet-step" data-side="${side}" data-delta="1" aria-label="Ajouter un point à ${esc(name)}">+</button></div></div>`;
