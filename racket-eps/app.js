@@ -250,17 +250,31 @@
     return (src.take === 'winner' ? 'Vainqueur' : 'Perdant') + ' M' + (sm ? sm.number : '?');
   }
 
-  function matchRow(c, s, m) {
+  /* Enjeu Elo sous un nom de carte : avant le match, gain/perte possibles ; après, variation obtenue. */
+  function cardStake(m, stk, side) {
+    if (!stk) return '';
+    const elo = side === 'a' ? stk.ra : stk.rb;
+    if (m.done) {
+      if (m.forfeit) return `<div class="stake mini"><span class="stake-elo">Elo ${Math.round(elo)}</span><span>forfait : Elo inchangé</span></div>`;
+      const aWon = m.sa > m.sb, won = side === 'a' ? aWon : !aWon;
+      const d = side === 'a' ? (aWon ? stk.aWin : stk.aLoss) : (aWon ? stk.bLoss : stk.bWin);
+      return `<div class="stake mini"><span class="stake-elo">Elo ${Math.round(elo)}</span><span class="${won ? 'stake-win' : 'stake-loss'}">${signed(d)} à la clôture</span></div>`;
+    }
+    return side === 'a' ? stakeHTML(stk.ra, stk.aWin, stk.aLoss, 'mini', true) : stakeHTML(stk.rb, stk.bWin, stk.bLoss, 'mini', true);
+  }
+
+  function matchRow(c, s, m, start) {
     const st = R.matchState(m), w = R.winnerOf(m);
+    const stk = m.a && m.b ? R.matchStakes(c, s, m, start) : null;
     const nameA = m.a ? esc(nameOf(c, m.a)) : `<i>${esc(sourceText(s, m, 'A'))}</i>`;
     const nameB = m.b ? esc(nameOf(c, m.b)) : `<i>${esc(sourceText(s, m, 'B'))}</i>`;
     const stateTxt = { done: m.forfeit ? '✓ forfait de ' + esc(nameOf(c, m.forfeit)) : '✓ enregistré', playing: '▶ en cours · terrain ' + m.court, waiting: 'en attente d\'un terrain', pending: 'en attente des matchs précédents' }[st];
     const ready = !!(m.a && m.b);
     const score = m.done ? (m.forfeit ? 'forfait' : m.sa + ' – ' + m.sb) : '– · –';
     return `<div class="match st-${st}">
-      <div class="name ${w && w === m.a ? 'win' : ''}">${nameA}</div>
+      <div class="name ${w && w === m.a ? 'win' : ''}">${nameA}${cardStake(m, stk, 'a')}</div>
       <div class="match-score" aria-label="Score">${esc(score)}</div>
-      <div class="name ${w && w === m.b ? 'win' : ''}">${nameB}</div>
+      <div class="name ${w && w === m.b ? 'win' : ''}">${nameB}${cardStake(m, stk, 'b')}</div>
       <button class="btn ${m.done ? '' : 'primary'} match-btn" data-action="score-sheet" data-id="${m.id}" ${ready ? '' : 'disabled'}>${m.done ? 'Corriger' : 'Saisir le score'}</button>
       <div class="muted small meta">${esc(matchLabel(c, s, m))} · ${stateTxt}${m.invalidated ? ' · <span class="bad">résultat invalidé par une correction en amont, à rejouer</span>' : ''}
         ${ready ? `<details class="more"><summary>Autres actions</summary><div class="actions">
@@ -414,7 +428,8 @@
     });
     const entries = Array.from(groups.entries());
     if (['swiss', 'ladder'].includes(s.mode) || s.mode === 'reclass') entries.reverse(); // ronde la plus récente en haut
-    const list = entries.map(([k, ms]) => `<h3 class="grouphead">${esc(k)}</h3>${ms.map(m => matchRow(c, s, m)).join('')}`).join('');
+    const start = R.sessionStartElo(c, s); // calculé une fois pour toutes les cartes
+    const list = entries.map(([k, ms]) => `<h3 class="grouphead">${esc(k)}</h3>${ms.map(m => matchRow(c, s, m, start)).join('')}`).join('');
     return `<section class="panel"><div class="row between"><div><h2>Séance ${s.seq} · ${R.MODES[s.mode]}${s.mode === 'ladder' ? (s.ladderType === 'single' ? ' individuelle' : ' par groupes') : ''}</h2>
         <div class="muted small">${esc(s.date)} · Elo figé jusqu'à la clôture · ${s.mode === 'reclass' ? (s.phase === 'classement' ? 'tableaux de classement · ' : 'brassage · ') : ''}${done}/${total} matchs terminés</div></div>
         <span class="badge">${s.reopened ? 'Rouverte (correction)' : 'En cours'}</span></div>
@@ -452,8 +467,9 @@
   let ss = null; // { id, sa, sb }
   /* Enjeu Elo affiché sur les feuilles : gain en cas de victoire, perte en cas de défaite. */
   const signed = v => { const r = Math.round(v); return (r > 0 ? '+' : r < 0 ? '−' : '±') + Math.abs(r); };
-  function stakeHTML(elo, win, loss, cls) {
-    return `<div class="stake ${cls || ''}"><span class="stake-elo">Elo ${Math.round(elo)}</span><span class="stake-win">Victoire ${signed(win)}</span><span class="stake-loss">Défaite ${signed(loss)}</span></div>`;
+  function stakeHTML(elo, win, loss, cls, short) {
+    const full = `Elo ${Math.round(elo)}, victoire ${signed(win)}, défaite ${signed(loss)}`;
+    return `<div class="stake ${cls || ''}" aria-label="${full}" title="${full}"><span class="stake-elo">Elo ${Math.round(elo)}</span><span class="stake-win">${short ? 'V' : 'Victoire'} ${signed(win)}</span><span class="stake-loss">${short ? 'D' : 'Défaite'} ${signed(loss)}</span></div>`;
   }
 
   function openScoreSheet(id) {

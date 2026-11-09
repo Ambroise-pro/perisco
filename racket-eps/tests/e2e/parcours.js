@@ -77,6 +77,9 @@ async function scenario(browser, label, ctxOpts) {
   await page.click('[data-action="start-session"]');
   const playing = await page.$$eval('.match.st-playing', n => n.length);
   check(playing > 0 && playing <= 4, `${playing} match(s) en cours sur 4 terrains maximum`);
+  const cardStakes = await page.$$eval('.match .stake', n => n.map(x => x.textContent));
+  const nCards = await page.$$eval('.match', n => n.length);
+  check(cardStakes.length === nCards * 2 && cardStakes.every(t => /V \+\d+/.test(t) && /D −\d+/.test(t)), 'cartes de match : enjeu Elo affiché pour les 2 joueurs (' + nCards + ' cartes)');
   await page.screenshot({ path: path.join(OUT, label + '-2-seance.png'), fullPage: true });
   check(/Classement des poules/.test(await page.textContent('#view')) && /Départagé par/.test(await page.textContent('#view')), 'classement par poule avec critère de départage affiché');
 
@@ -98,6 +101,8 @@ async function scenario(browser, label, ctxOpts) {
   check((await page.textContent('#scoreDialog .ss-validate')).includes('11 – 4'), 'saisie au toucher : 11 – 4 sans clavier');
   if (label === 'ordinateur') await page.screenshot({ path: path.join(OUT, 'saisie-score.png') });
   await page.click('#scoreDialog [data-action="ss-validate"]');
+  check(/[+−]\d+ à la clôture/.test(await page.textContent('#view')), 'carte d\'un match terminé : variation Elo obtenue affichée');
+  await page.screenshot({ path: path.join(OUT, label + '-cartes-enjeu.png'), fullPage: true });
   await page.waitForFunction(() => !document.querySelector('#scoreDialog').open);
   await proj.waitForFunction(b => document.querySelector('.proj-prog').textContent !== b, projBefore, { timeout: 5000 });
   check(true, 'projection mise à jour automatiquement après une saisie (' + (await proj.textContent('.proj-prog')) + ')');

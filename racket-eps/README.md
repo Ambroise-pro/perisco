@@ -132,6 +132,8 @@ La fiche s'ouvre dans une **fenêtre** (pop-up) quand on touche le nom d'un él�
 ### Enjeu affiché sur les feuilles de match
 La saisie du score (enseignant), la feuille de match et la feuille de poule (tablettes des élèves) affichent pour chaque joueur son **Elo de début de séance**, les points gagnés **en cas de victoire** et perdus **en cas de défaite**.
 
+Les **cartes de match** de la séance l'affichent aussi en version courte (« Elo 1098 · V +12 · D −20 ») ; une fois le match terminé, la carte indique la variation obtenue (« +12 à la clôture »), ou « Elo inchangé » pour un forfait.
+
 ## Elo saisi à la main
 L'enseignant peut **fixer l'Elo** d'un élève quand il le souhaite (niveau connu d'avance, erreur à rattraper, élève arrivé en cours de cycle…) :
 - **Depuis la fiche élève** : « ✎ Modifier l'Elo », puis boutons −50 / −10 / +10 / +50 (pas besoin du clavier), note facultative, « Enregistrer ».
