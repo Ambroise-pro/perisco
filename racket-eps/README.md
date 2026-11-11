@@ -118,6 +118,15 @@ L'onglet **Groupes de travail** répartit les élèves présents sur un nombre d
 
 Les effectifs diffèrent au plus d'un élève. Un appel permet d'exclure les absents. On peut déplacer un élève à la main ; ces déplacements sont conservés jusqu'à la prochaine répartition. Les groupes sont mémorisés avec la classe et peuvent être imprimés.
 
+## Évaluations AFL
+Chaque classe suit des AFL (par défaut AFL1, AFL2, AFL3 ; liste modifiable dans Réglages).
+- **Évaluer** : touchez la pastille d'un AFL (liste des élèves ou fiche). Une fenêtre s'ouvre : choisissez le **degré 1 à 4** au toucher et, si vous le souhaitez, une **petite note justifiant le degré** (200 caractères), une par AFL évalué. La date du jour est enregistrée. Toucher à nouveau la pastille permet de modifier ou de **retirer** l'évaluation.
+- **Filtrer** : dans Élèves et dans Classement, choisissez l'AFL puis « Tous », « ✓ Évalués » ou « À évaluer » (avec les effectifs). Le classement filtré garde les vrais rangs. Le filtre choisi est mémorisé sur l'appareil.
+- La fiche élève récapitule degré, date et note de chaque AFL ; l'export CSV du classement ajoute date, degré et note par AFL. Les évaluations n'ont aucun effet sur l'Elo et sont incluses dans les sauvegardes.
+
+## Plein écran
+Le bouton ⛶ de l'en-tête passe toute l'application en plein écran (et en sort). Il est masqué sur les navigateurs qui ne le permettent pas (iPhone notamment) ; sur iPad/Android, l'installation sur l'écran d'accueil donne aussi un affichage sans barre d'adresse.
+
 ## Fiche élève
 La fiche s'ouvre dans une **fenêtre** (pop-up) quand on touche le nom d'un élève, depuis le classement, la liste des élèves ou les groupes de travail. Elle se ferme avec ✕, avec la touche Échap ou en touchant le fond.
 

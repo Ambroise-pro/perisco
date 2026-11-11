@@ -96,7 +96,34 @@
     const unsaved = R.unsavedSessions(db), saveBtn = document.querySelector('.top [data-action="export-json"]');
     if (saveBtn) { saveBtn.dataset.count = unsaved ? String(unsaved) : ''; saveBtn.setAttribute('aria-label', 'Sauvegarder (export JSON)' + (unsaved ? ' — ' + unsaved + ' séance(s) non sauvegardée(s)' : '')); }
     $('view').innerHTML = !c ? welcome() : (views[tab] || dashboard)(c);
+    updateFsButton();
   }
+
+  /* ---------------- Plein écran (toute l'application) ---------------- */
+  const fsSupported = () => !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+  const fsActive = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  function toggleFullscreen() {
+    const de = document.documentElement;
+    if (fsActive()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else {
+      const r = (de.requestFullscreen || de.webkitRequestFullscreen).call(de);
+      if (r && r.catch) r.catch(() => toast('Plein écran refusé par le navigateur.', true));
+    }
+  }
+  function updateFsButton() {
+    const b = document.querySelector('.top [data-action="fullscreen"]');
+    if (!b) return;
+    b.hidden = !fsSupported();
+    const on = fsActive();
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', on ? 'Quitter le plein écran' : 'Plein écran');
+    b.title = on ? 'Quitter le plein écran' : 'Plein écran';
+    b.innerHTML = on
+      ? '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>'
+      : '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+  }
+  document.addEventListener('fullscreenchange', updateFsButton);
+  document.addEventListener('webkitfullscreenchange', updateFsButton);
 
   function welcome() {
     return `<section class="panel"><h2>Bienvenue dans Racket EPS</h2><p>Créez une classe pour organiser vos séances, faire l'appel et suivre les classements Elo.</p><div class="actions"><button class="btn primary" data-action="add-class">Créer ma première classe</button>
@@ -104,13 +131,63 @@
       <p class="muted small">La classe exemple contient des élèves fictifs (pseudonymes d'animaux) et, si vous le souhaitez, quelques séances déjà jouées avec des résultats simulés, pour découvrir l'Elo, les graphiques et l'historique.</p></section>`;
   }
 
+  /* ---------------- AFL : filtre « évalués / pas encore évalués » ---------------- */
+  // Préférence d'affichage propre à cet appareil (pas une donnée de la classe).
+  let aflF = { afl: null, mode: 'all' };
+  try { aflF = Object.assign(aflF, JSON.parse(localStorage.getItem('racket_eps_afl_filter') || '{}')); } catch (e) { /* ignore */ }
+  function saveAflF() { try { localStorage.setItem('racket_eps_afl_filter', JSON.stringify(aflF)); } catch (e) { /* ignore */ } }
+  function currentAfl(c) { const l = R.aflList(c); return l.includes(aflF.afl) ? aflF.afl : l[0]; }
+  function aflBar(c) {
+    const afl = currentAfl(c), sum = R.aflSummary(c, afl), mode = aflF.mode || 'all';
+    const b = (action, v, label, on) => `<button type="button" class="seg-btn ${on ? 'on' : ''}" aria-pressed="${on}" data-action="${action}" data-value="${esc(v)}">${label}</button>`;
+    return `<div class="afl-bar" role="group" aria-label="Filtre AFL">
+      <div class="seg" role="group" aria-label="AFL">${R.aflList(c).map(a => b('afl-pick', a, esc(a), a === afl)).join('')}</div>
+      <div class="seg wide" role="group" aria-label="Élèves affichés">${b('afl-mode', 'all', 'Tous (' + sum.total + ')', mode === 'all')}${b('afl-mode', 'done', '✓ Évalués (' + sum.done + ')', mode === 'done')}${b('afl-mode', 'todo', 'À évaluer (' + sum.todo + ')', mode === 'todo')}</div></div>`;
+  }
+  function aflFiltered(c, list) { return R.filterByAfl(c, list, currentAfl(c), aflF.mode); }
+  function aflToggles(c, id) {
+    return `<span class="afl-toggles">${R.aflList(c).map(a => {
+      const v = R.aflEval(c, id, a);
+      const tip = v ? esc(a) + ' évalué le ' + esc(v.date || '') + (v.degree ? ' · degré ' + v.degree : '') + (v.note ? ' · ' + esc(v.note) : '') + ' (toucher pour modifier)' : 'Évaluer ' + esc(a);
+      return `<button type="button" class="afl-chip ${v ? 'on' : ''}" aria-pressed="${!!v}" data-action="afl-open" data-id="${id}" data-afl="${esc(a)}" title="${tip}">${v ? '✓ ' : ''}${esc(a)}${v && v.degree ? ' · D' + v.degree : ''}${v && v.note ? ' <span aria-hidden="true">✎</span>' : ''}</button>`;
+    }).join('')}</span>`;
+  }
+
+  /* Fenêtre d'évaluation AFL : degré 1-4 au toucher, petite note justifiant le degré. */
+  let aflDraft = null; // { id, afl, degree }
+  function openAflDialog(id, afl) {
+    const c = cl(), v = R.aflEval(c, id, afl);
+    aflDraft = { id, afl, degree: v ? v.degree : null, note: v ? v.note : '' };
+    renderAflDialog();
+    const dlg = $('aflDialog');
+    if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', ''); }
+  }
+  function renderAflDialog() {
+    const c = cl(), d = aflDraft, v = R.aflEval(c, d.id, d.afl);
+    const noteVal = $('aflNote') ? $('aflNote').value : d.note;
+    $('aflDialog').innerHTML = `<div class="afl-box">
+      <div class="dlg-head"><h2 id="aflTitle">${esc(d.afl)} · ${esc(nameOf(c, d.id))}</h2><button type="button" class="btn mini" data-action="afl-cancel" aria-label="Fermer sans enregistrer">✕</button></div>
+      <div class="field-big"><span class="fb-label">Degré d'acquisition</span><div class="seg afl-degrees" role="group" aria-label="Degré">${R.AFL_DEGREES.map(n => `<button type="button" class="seg-btn ${d.degree === n ? 'on' : ''}" aria-pressed="${d.degree === n}" data-action="afl-degree" data-value="${n}">Degré ${n}</button>`).join('')}</div></div>
+      <div class="field"><label for="aflNote">Note justifiant le degré (facultatif)</label><textarea id="aflNote" maxlength="200" rows="3" placeholder="Ex. : varie la trajectoire, gagne des points en fond de court…">${esc(noteVal || '')}</textarea></div>
+      ${v ? `<p class="muted small">Évalué le ${esc(v.date || '')}.</p>` : ''}
+      <div class="actions"><button type="button" class="btn primary" data-action="afl-save">✓ Enregistrer l'évaluation</button>
+        ${v ? '<button type="button" class="btn danger" data-action="afl-remove">Retirer l\'évaluation</button>' : ''}
+        <button type="button" class="btn" data-action="afl-cancel">Annuler</button></div></div>`;
+  }
+  function closeAflDialog() { const dlg = $('aflDialog'); aflDraft = null; if (dlg.open) { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); } }
+  function afterAflChange(c, id, msg) {
+    save(); render();
+    if ($('studentDialog').open) openFiche(id);
+    toast(msg);
+  }
+
   function rankingTable(r, opts) {
     opts = opts || {};
     return `<div class="tablewrap"><table><thead><tr><th>Rang</th><th>Élève</th><th>Elo</th><th>Variation</th><th>Matchs</th><th>V</th><th>D</th><th>%</th><th>Diff. points</th></tr></thead><tbody>${
-      r.map((p, i) => `<tr><td>${i + 1}</td><td><button class="btn linkish" data-action="student" data-id="${p.id}">${esc(p.name)}</button></td><td><b>${fmt(p.elo)}</b>${p.history.length && p.history[p.history.length - 1].manual ? ' <span class="badge" title="Elo fixé à la main">✎</span>' : ''}</td>
+      r.map((p, i) => `<tr><td>${opts.rankOf ? opts.rankOf[p.id] : i + 1}</td><td><button class="btn linkish" data-action="student" data-id="${p.id}">${esc(p.name)}</button></td><td><b>${fmt(p.elo)}</b>${p.history.length && p.history[p.history.length - 1].manual ? ' <span class="badge" title="Elo fixé à la main">✎</span>' : ''}</td>
         <td class="${p.lastDelta >= 0 ? 'good' : 'bad'}">${!p.history.length ? '—' : (p.history[p.history.length - 1].absent ? '<span class="muted">absent</span>' : (p.lastDelta >= 0 ? '+' : '') + fmt(p.lastDelta))}</td>
         <td>${p.played}</td><td>${p.wins}</td><td>${p.losses}</td><td>${p.played ? fmt(p.wins / p.played * 100) + ' %' : '—'}</td><td>${p.for - p.against}</td></tr>`).join('')
-    }</tbody></table></div>${opts.note ? `<p class="muted small">${opts.note}</p>` : ''}`;
+    }${r.length ? '' : '<tr><td colspan="9" class="muted">Aucun élève pour ce filtre</td></tr>'}</tbody></table></div>${opts.note ? `<p class="muted small">${opts.note}</p>` : ''}`;
   }
 
   function dashboard(c) {
@@ -147,9 +224,9 @@
       <div class="field"><label for="bulk">Importer une liste (un élève par ligne)</label><textarea id="bulk" placeholder="Prénom N.&#10;Prénom N.&#10;…"></textarea></div>
       <button class="btn" data-action="bulk-students">Importer les noms</button>
       <p class="muted small">Les doublons (majuscules et accents ignorés) sont refusés. Les noms restent dans ce navigateur : évitez les données nominatives sur un appareil partagé.</p></section>
-      <section class="panel"><h2>Liste (${c.students.length})</h2>${
-        c.students.map((p, i) => `<div class="row between listrow"><span>${i + 1}. <button class="btn linkish" data-action="student" data-id="${p.id}">${esc(p.name)}</button> <span class="muted small">· Elo ${fmt(st[p.id].elo)} · ${st[p.id].absences} absence(s)</span></span><button class="btn" data-action="rename" data-id="${p.id}">Renommer</button></div>`).join('') || '<div class="empty">Aucun élève</div>'
-      }</section>`;
+      <section class="panel"><h2>Liste (${c.students.length})</h2>${c.students.length ? aflBar(c) : ''}${
+        aflFiltered(c, c.students).map(p => `<div class="row between listrow"><span>${c.students.indexOf(p) + 1}. <button class="btn linkish" data-action="student" data-id="${p.id}">${esc(p.name)}</button> <span class="muted small">· Elo ${fmt(st[p.id].elo)} · ${st[p.id].absences} absence(s)</span></span><span class="row">${aflToggles(c, p.id)}<button class="btn" data-action="rename" data-id="${p.id}">Renommer</button></span></div>`).join('') || `<div class="empty">${c.students.length ? 'Aucun élève pour ce filtre' : 'Aucun élève'}</div>`
+      }${c.students.length ? '<p class="muted small">Touchez un AFL pour évaluer l\'élève : choisissez le degré (1 à 4) et, si vous le souhaitez, une petite note qui justifie ce degré. Touchez-le à nouveau pour modifier ou retirer l\'évaluation.</p>' : ''}</section>`;
   }
 
   /* ---------------- Séance ---------------- */
@@ -525,6 +602,7 @@
       <div class="grid"><div class="stat"><b>${fmt(p.elo)}</b><small>Elo actuel · ${rank}ᵉ / ${c.students.length}</small></div><div class="stat"><b>${p.wins} / ${p.played}</b><small>Matchs gagnés${p.played ? ' (' + fmt(p.wins / p.played * 100) + ' %)' : ''}</small></div>
       <div class="stat"><b>${p.for} / ${p.against}</b><small>Points marqués / encaissés</small></div><div class="stat"><b>${p.opponents.size}</b><small>Adversaires différents</small></div><div class="stat"><b>${p.absences}</b><small>Absences</small></div></div>
       ${eloEditor(c, p)}
+      <div class="afl-fiche"><h3>Évaluations AFL</h3>${aflToggles(c, p.id)}<ul class="afl-detail">${R.aflList(c).map(a => { const v = R.aflEval(c, p.id, a); return `<li><b>${esc(a)}</b> : ${v ? (v.degree ? 'degré ' + v.degree : 'évalué') + ' le ' + esc(v.date || '') + (v.note ? ' — <i>' + esc(v.note) + '</i>' : '') : '<span class="muted">à évaluer</span>'}</li>`; }).join('')}</ul></div>
       <h3 style="margin-top:20px">Évolution de l'Elo</h3>
       ${lineChart({ id: 'eloChart', points: p.history.map(h => ({ v: h.elo, x: h.manual ? '✎' : 'S' + h.seq, label: h.manual ? 'Elo fixé à la main' + (h.date ? ' · ' + h.date : '') + (h.note ? ' · ' + h.note : '') : 'Séance ' + h.seq + (h.date ? ' · ' + h.date : '') + (h.absent ? ' · absent' : ''), hollow: h.absent })), baseline: Number.isFinite(c.initialElo) ? c.initialElo : 1000, baselineLabel: 'Elo initial', fmtVal: v => fmt(v), name: 'Elo' })}
       <h3 style="margin-top:20px">Évolution du rang dans la classe</h3>
@@ -560,7 +638,7 @@
     const c = cl(), st = R.computeStats(c), p = st[id];
     if (!p) return;
     const dlg = $('studentDialog');
-    ficheOpener = document.activeElement;
+    if (!dlg.open) ficheOpener = document.activeElement;
     dlg.innerHTML = `<div class="dlg-body">${ficheHTML(c, p)}</div>`;
     if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', ''); }
     const close = dlg.querySelector('[data-action="student-close"]');
@@ -593,7 +671,9 @@
             <button type="button" class="btn mini" data-action="elo-bulk-step" data-id="${p.id}" data-delta="10" aria-label="${esc(p.name)} : +10">+10</button>${diff ? `<span class="badge">${v - p.elo >= 0 ? '+' : ''}${fmt(v - p.elo)}</span>` : ''}</div></td></tr>`;
         }).join('')}</tbody></table></div></section>`;
     }
-    return `${demoNotice(c)}<section class="panel"><div class="row between"><h2>Classement général Elo</h2><button type="button" class="btn" data-action="elo-bulk-edit">✎ Modifier les Elo</button></div>${rankingTable(r, { note: 'Touchez le nom d\'un élève pour ouvrir sa fiche. Calculé uniquement à partir des séances clôturées, dans l\'ordre chronologique. Égalités départagées par ordre alphabétique (affiché de façon stable). Variation = dernière séance clôturée. Les forfaits et exemptions ne comptent pas pour l\'Elo.' })}${eloExplainer(c)}</section>`;
+    const rankOf = {};
+    r.forEach((p, i) => { rankOf[p.id] = i + 1; });
+    return `${demoNotice(c)}<section class="panel"><div class="row between"><h2>Classement général Elo</h2><button type="button" class="btn" data-action="elo-bulk-edit">✎ Modifier les Elo</button></div>${r.length ? aflBar(c) : ''}${rankingTable(aflFiltered(c, r), { rankOf, note: 'Touchez le nom d\'un élève pour ouvrir sa fiche. Calculé uniquement à partir des séances clôturées, dans l\'ordre chronologique. Égalités départagées par ordre alphabétique (affiché de façon stable). Variation = dernière séance clôturée. Les forfaits et exemptions ne comptent pas pour l\'Elo.' })}${eloExplainer(c)}</section>`;
   }
 
   /* ---------------- Groupes de travail (hors séance) ---------------- */
@@ -646,6 +726,7 @@
       <div class="field"><label for="courts">Nombre de terrains par défaut</label><input type="number" id="courts" min="1" max="30" value="${c.courts}"></div>
       <div class="field"><label for="k">Coefficient Elo K (par match)</label><input type="number" id="k" min="1" max="100" value="${c.k}"></div>
       <div class="field"><label for="initElo">Elo initial du cycle</label><input type="number" id="initElo" min="100" max="3000" value="${Number.isFinite(c.initialElo) ? c.initialElo : 1000}"></div></div>
+      <div class="field"><label for="aflList">AFL suivis (séparés par des virgules)</label><input id="aflList" value="${esc(R.aflList(c).join(', '))}" autocomplete="off"></div>
       <button class="btn primary" data-action="save-settings">Enregistrer les réglages</button>
       <p class="muted small">K est mémorisé à la création de chaque séance : le modifier n'affecte pas les séances passées. ${anyClosed ? 'Modifier l\'Elo initial recalcule tout le cycle.' : ''} Le nombre de terrains par défaut s'applique aux prochaines séances ; pour la séance en cours, utilisez le réglage « Terrains disponibles » de l'onglet Séance.</p></section>
       <section class="panel"><h2>Tester cet appareil</h2><p class="muted small">Vérifie sur la tablette : stockage, fonctionnement hors connexion, caméra et lecture des QR, écran. À faire avant la première séance.</p>
@@ -1082,13 +1163,15 @@
       <div class="scan-result"></div>`;
     document.body.appendChild(p);
     scan.panel = p;
+    scan.handled = false; // un code saisi pendant le démarrage de la caméra garde son message
+    const camMsg = (msg, kind) => { if (!scan.handled) scanStatus(msg, kind); };
     const backend = scanBackend();
     if (backend === 'none') { scanStatus('Lecture automatique non disponible sur ce navigateur : saisissez le code affiché sous le QR de la tablette.', 'warn'); p.querySelector('video').hidden = true; return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { scanStatus('Caméra inaccessible (page non sécurisée ?) : saisissez le code.', 'warn'); p.querySelector('video').hidden = true; return; }
     try {
       scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
     } catch (e) {
-      scanStatus('Caméra refusée ou absente : autorisez-la, ou saisissez le code.', 'warn');
+      camMsg('Caméra refusée ou absente : autorisez-la, ou saisissez le code.', 'warn');
       p.querySelector('video').hidden = true;
       return;
     }
@@ -1096,7 +1179,7 @@
     const video = p.querySelector('video');
     video.srcObject = scan.stream;
     if (backend === 'native') { try { scan.detector = new window.BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { scan.detector = null; } }
-    scanStatus('Présentez le QR code de résultat de la tablette.', '');
+    camMsg('Présentez le QR code de résultat de la tablette.', '');
     scan.timer = setInterval(async () => {
       if (scan.busy || !video.videoWidth) return;
       scan.busy = true;
@@ -1135,6 +1218,7 @@
 
   let pendingScan = null;
   function handleScanned(text, force) {
+    scan.handled = true;
     if (scan.test) { beep(true); scanStatus('✓ QR lu : ' + String(text).slice(0, 60) + (String(text).length > 60 ? '…' : ''), 'ok'); return; }
     const c = cl(), s = c && R.activeSession(c);
     if (!scan.auto && !force) {
@@ -1360,10 +1444,33 @@
       const c = cl(); const r = act(() => R.reopenSession(c, el.dataset.id), 'Séance rouverte');
       if (r && r.ok) { tab = 'session'; render(); }
     },
+    'afl-pick': el => { aflF.afl = el.dataset.value; saveAflF(); render(); },
+    'afl-mode': el => { aflF.mode = el.dataset.value; saveAflF(); render(); },
+    'afl-open': el => openAflDialog(el.dataset.id, el.dataset.afl),
+    'afl-degree': el => { if (!aflDraft) return; const n = Number(el.dataset.value); aflDraft.degree = aflDraft.degree === n ? null : n; renderAflDialog(); },
+    'afl-save': () => {
+      if (!aflDraft) return;
+      const c = cl(), { id, afl, degree } = aflDraft;
+      const r = R.setAflEvaluation(c, id, afl, { degree, note: $('aflNote') ? $('aflNote').value : '' });
+      if (!r.ok) return toast(r.error, true);
+      closeAflDialog();
+      afterAflChange(c, id, nameOf(c, id) + ' : ' + afl + ' évalué' + (degree ? ' (degré ' + degree + ')' : ''));
+    },
+    'afl-remove': () => {
+      if (!aflDraft) return;
+      const c = cl(), { id, afl } = aflDraft;
+      if (!confirm('Retirer l\'évaluation ' + afl + ' de ' + nameOf(c, id) + ' (degré et note) ?')) return;
+      R.setAflEvaluated(c, id, afl, false);
+      closeAflDialog();
+      afterAflChange(c, id, nameOf(c, id) + ' : ' + afl + ' à évaluer');
+    },
+    'afl-cancel': () => closeAflDialog(),
+    'fullscreen': () => toggleFullscreen(),
     'save-settings': () => {
       const c = cl(), n = Number($('courts').value), k = Number($('k').value), e = Number($('initElo').value);
       if (!Number.isInteger(n) || n < 1 || n > 30 || !Number.isFinite(k) || k < 1 || k > 100 || !Number.isFinite(e) || e < 100 || e > 3000) return toast('Réglages invalides.', true);
       if (c.sessions.some(s => s.status === 'closed') && e !== (Number.isFinite(c.initialElo) ? c.initialElo : 1000) && !confirm('Modifier l\'Elo initial recalcule tout le cycle. Continuer ?')) return;
+      if ($('aflList')) { const r = R.setAflList(c, $('aflList').value.split(/[,;]/)); if (!r.ok) return toast(r.error, true); }
       c.courts = n; c.k = k; c.initialElo = e; c.sport = $('sport').value;
       save(); render(); toast('Réglages enregistrés');
     },
@@ -1466,8 +1573,9 @@
     'scan-test': () => { closeScan(); scan.test = true; openScan(); },
     'export-csv': () => {
       const c = cl();
-      const rows = [['Rang', 'Eleve', 'Elo', 'Matchs', 'Victoires', 'Defaites', 'Points marques', 'Points encaisses', 'Adversaires distincts', 'Absences']]
-        .concat(R.ranks(c).map((p, i) => [i + 1, p.name, fmt(p.elo), p.played, p.wins, p.losses, p.for, p.against, p.opponents.size, p.absences]));
+      const afls = R.aflList(c);
+      const rows = [['Rang', 'Eleve', 'Elo', 'Matchs', 'Victoires', 'Defaites', 'Points marques', 'Points encaisses', 'Adversaires distincts', 'Absences'].concat(afls.flatMap(a => [a + ' date', a + ' degre', a + ' note']))]
+        .concat(R.ranks(c).map((p, i) => [i + 1, p.name, fmt(p.elo), p.played, p.wins, p.losses, p.for, p.against, p.opponents.size, p.absences].concat(afls.flatMap(a => { const v = R.aflEval(c, p.id, a); return v ? [v.date || '', v.degree || '', v.note || ''] : ['', '', '']; }))));
       download('classement-' + c.name.replace(/[^a-z0-9]/gi, '-') + '.csv', '﻿' + rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(';')).join('\r\n'), 'text/csv;charset=utf-8');
     },
     'delete-class': () => {
@@ -1523,6 +1631,8 @@
 
   $('studentDialog').addEventListener('click', e => { if (e.target.id === 'studentDialog') closeFiche(); });
   $('scoreDialog').addEventListener('click', e => { if (e.target.id === 'scoreDialog') closeScoreSheet(); });
+  $('aflDialog').addEventListener('click', e => { if (e.target.id === 'aflDialog') closeAflDialog(); });
+  $('aflDialog').addEventListener('close', () => { aflDraft = null; });
   $('scoreDialog').addEventListener('close', () => { ss = null; });
   $('studentDialog').addEventListener('close', () => { eloDraft = null; if (ficheOpener && ficheOpener.focus && document.contains(ficheOpener)) ficheOpener.focus(); ficheOpener = null; });
 

@@ -380,3 +380,24 @@ tr.edited td{background:#13342b}
 .ppc-players{list-style:none;margin:0;padding:0;display:grid;gap:.35em;font-size:clamp(20px,2.2vw,40px);font-weight:700;flex:1;min-width:0}
 .ppc-players li{display:flex;justify-content:space-between;gap:.6em;overflow-wrap:anywhere}
 .ppc-players b{font-size:.7em;opacity:.85;white-space:nowrap}
+
+/* AFL : filtre et pastilles « évalué » */
+.afl-bar{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 12px}
+.afl-bar .seg{flex:0 1 auto}
+.afl-toggles{display:inline-flex;flex-wrap:wrap;gap:6px}
+.afl-chip{min-height:44px;min-width:64px;padding:6px 12px;border-radius:999px;border:2px solid #3b5a72;background:transparent;color:inherit;font:inherit;font-weight:700;cursor:pointer}
+.afl-chip.on{background:#1f6f5c;border-color:#5ce1bb;color:#eafff7}
+.afl-fiche{margin-top:16px}
+.afl-fiche h3{margin:0 0 8px}
+.top [data-action="fullscreen"][hidden]{display:none}
+
+#aflDialog{max-width:min(560px,calc(100vw - 32px));width:100%;border:0;border-radius:18px;padding:0;background:#0f2233;color:inherit}
+#aflDialog::backdrop{background:rgba(0,0,0,.55)}
+.afl-box{padding:18px;display:grid;gap:12px}
+.afl-box textarea{width:100%;font:inherit}
+.afl-degrees .seg-btn{min-height:56px}
+.afl-detail{margin:8px 0 0;padding-left:1.2em;line-height:1.5}
+.afl-bar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);align-items:start}
+.afl-bar .seg{grid-template-columns:repeat(auto-fit,minmax(80px,1fr))}
+.afl-bar .seg.wide{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+@media(max-width:700px){.afl-bar{grid-template-columns:1fr}}

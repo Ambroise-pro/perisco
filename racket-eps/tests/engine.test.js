@@ -796,3 +796,47 @@ test('Feuilles QR : format compact (QR peu dense) et anciens liens toujours lisi
   // Le code résultat produit à partir du lien compact est accepté
   assert.ok(R.applyAnyCode(c, s, R.resultCode(dm, { sa: 11, sb: 7 })).ok);
 });
+
+test('AFL : marquer évalué / à évaluer, filtrer, liste modifiable, sauvegarde valide', () => {
+  const c = R.createDemoClass({ students: 10, sessions: 1, seed: 'afl' });
+  assert.deepEqual(R.aflList(c), ['AFL1', 'AFL2', 'AFL3']);
+  const [a, b, d] = c.students;
+  assert.ok(R.setAflEvaluated(c, a.id, 'AFL1', true, '2026-11-10').ok);
+  assert.ok(R.setAflEvaluated(c, b.id, 'AFL1', true).ok);
+  assert.ok(R.setAflEvaluated(c, d.id, 'AFL2', true).ok);
+  assert.equal(R.aflDate(c, a.id, 'AFL1'), '2026-11-10');
+  assert.deepEqual(R.filterByAfl(c, c.students, 'AFL1', 'done').map(p => p.id), [a.id, b.id]);
+  assert.equal(R.filterByAfl(c, c.students, 'AFL1', 'todo').length, 8);
+  assert.equal(R.filterByAfl(c, c.students, 'AFL1', 'all').length, 10);
+  assert.deepEqual(R.aflSummary(c, 'AFL2'), { done: 1, todo: 9, total: 10 });
+  // Annuler
+  assert.ok(R.setAflEvaluated(c, b.id, 'AFL1', false).ok);
+  assert.equal(R.isAflEvaluated(c, b.id, 'AFL1'), false);
+  assert.equal(c.aflEvals[b.id], undefined, 'rien de stocké pour un élève sans évaluation');
+  // Erreurs
+  assert.equal(R.setAflEvaluated(c, 'inconnu', 'AFL1', true).ok, false);
+  assert.equal(R.setAflEvaluated(c, a.id, 'AFL9', true).ok, false);
+  // Degré et note de justification
+  assert.ok(R.setAflEvaluation(c, a.id, 'AFL1', { degree: 3, note: '  Varie   les trajectoires ' }).ok);
+  assert.deepEqual(R.aflEval(c, a.id, 'AFL1'), { date: '2026-11-10', degree: 3, note: 'Varie les trajectoires' }, 'date conservée, note nettoyée');
+  assert.equal(R.setAflEvaluation(c, a.id, 'AFL1', { degree: 5 }).ok, false, 'degré 1 à 4');
+  assert.ok(R.setAflEvaluation(c, a.id, 'AFL2', { degree: 2, note: 'x'.repeat(300) }).ok);
+  assert.equal(R.aflEval(c, a.id, 'AFL2').note.length, 200);
+  assert.ok(R.setAflEvaluation(c, a.id, 'AFL2', { degree: null }).ok);
+  assert.equal(R.aflEval(c, a.id, 'AFL2').degree, null, 'évalué sans degré possible');
+  R.setAflEvaluated(c, a.id, 'AFL2', false);
+  // Ancien format (date seule) toujours lu
+  c.aflEvals[d.id].AFL3 = '2026-11-01';
+  assert.deepEqual(R.aflEval(c, d.id, 'AFL3'), { date: '2026-11-01', degree: null, note: '' });
+  delete c.aflEvals[d.id].AFL3;
+  // Liste personnalisée
+  assert.ok(R.setAflList(c, ['AFL1', ' afl1 ', 'AFL2', 'Projet']).ok);
+  assert.deepEqual(R.aflList(c), ['AFL1', 'AFL2', 'Projet']);
+  assert.equal(R.setAflList(c, ['', ' ']).ok, false);
+  // L'Elo n'est pas affecté, la sauvegarde reste valide et se relit
+  const db = R.emptyDB(); db.classes.push(c); db.active = c.id;
+  const back = R.parseDB(JSON.stringify(db));
+  const c2 = back.classes[0];
+  assert.equal(R.aflDate(c2, a.id, 'AFL1'), '2026-11-10');
+  assert.equal(R.aflEval(c2, a.id, 'AFL1').note, 'Varie les trajectoires');
+});

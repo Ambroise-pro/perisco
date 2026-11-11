@@ -250,6 +250,33 @@ async function demoClass(browser) {
   const elo2 = await page.evaluate(id => Math.round(window.RacketEngine.computeStats(window.__racket.getDB().classes[0])[id].elo), elo0.id);
   check(elo2 === elo0.elo, 'ajustement annulé : retour à l\'Elo calculé');
   await page.click('[data-action="student-close"]');
+  // AFL : marquer depuis la fiche puis filtrer (élèves et classement)
+  await page.click('#view [data-action="student"] >> nth=0');
+  await page.waitForSelector('#studentDialog[open]');
+  await page.click('#studentDialog [data-action="afl-open"][data-afl="AFL1"]');
+  await page.waitForSelector('#aflDialog[open]');
+  await page.click('#aflDialog [data-action="afl-degree"][data-value="3"]');
+  await page.fill('#aflNote', 'Varie les trajectoires, gagne des points en fond de court');
+  await page.screenshot({ path: path.join(OUT, 'afl-evaluation.png') });
+  await page.click('#aflDialog [data-action="afl-save"]');
+  const aflTxt = await page.textContent('#studentDialog .afl-fiche');
+  check(await page.$('#studentDialog .afl-chip.on[data-afl="AFL1"]') !== null && /degré 3/.test(aflTxt) && /Varie les trajectoires/.test(aflTxt), 'fiche : AFL1 évalué au degré 3 avec une note justificative');
+  await page.click('[data-action="student-close"]');
+  await page.click('[data-tab="students"]');
+  await page.click('.listrow .afl-chip:not(.on)[data-action="afl-open"][data-afl="AFL1"] >> nth=0');
+  await page.click('#aflDialog [data-action="afl-degree"][data-value="2"]');
+  await page.click('#aflDialog [data-action="afl-save"]');
+  await page.click('[data-action="afl-mode"][data-value="done"]');
+  const nDone = await page.$$eval('.listrow', n => n.length);
+  await page.click('[data-action="afl-mode"][data-value="todo"]');
+  const nTodo = await page.$$eval('.listrow', n => n.length);
+  check(nDone === 2 && nTodo === 22, 'élèves filtrés par AFL1 : ' + nDone + ' évalués, ' + nTodo + ' à évaluer');
+  await page.click('[data-tab="ranking"]');
+  const rankRows = await page.$$eval('#view tbody tr', n => n.length);
+  check(rankRows === 22 && /À évaluer \(22\)/.test(await page.textContent('.afl-bar')), 'classement filtré « à évaluer » (rangs conservés)');
+  await page.screenshot({ path: path.join(OUT, 'afl-filtre.png') });
+  await page.click('[data-action="afl-mode"][data-value="all"]');
+  check(await page.$('.top [data-action="fullscreen"]') !== null, 'bouton plein écran dans l\'en-tête');
   // Modifier plusieurs Elo depuis le classement
   await page.click('[data-action="elo-bulk-edit"]');
   await page.click('[data-action="elo-bulk-step"][data-delta="10"] >> nth=1');

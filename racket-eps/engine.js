@@ -1464,6 +1464,7 @@
       if (!c.id || !Array.isArray(c.students) || !Array.isArray(c.sessions)) { errors.push('Classe invalide : ' + (c.name || '?')); return; }
       const ids = new Set();
       c.students.forEach(p => { if (!p.id || ids.has(p.id)) errors.push('Élève sans identifiant ou en double dans ' + c.name); ids.add(p.id); });
+      if (c.aflEvals != null && (typeof c.aflEvals !== 'object' || Array.isArray(c.aflEvals))) errors.push('Évaluations AFL invalides dans ' + c.name);
       const seqs = new Set();
       c.sessions.forEach(s => {
         if (seqs.has(s.seq)) errors.push('Numéro de séance en double dans ' + c.name);
@@ -1547,6 +1548,75 @@
   }
 
   function markExported(db, at) { db.lastExportAt = at || Date.now(); return db; }
+
+  /* ------------------------------------------------------------------ *
+   * AFL (attendus de fin de lycée / de cycle) : suivi « évalué / à évaluer »
+   * c.aflList = ['AFL1', 'AFL2', 'AFL3'] (modifiable)
+   * c.aflEvals = { idÉlève: { AFL1: { date, degree, note }, … } }
+   *   degree : degré d'acquisition 1 à 4 (ou null), note : courte justification du degré.
+   * N'affecte jamais l'Elo.
+   * ------------------------------------------------------------------ */
+  const DEFAULT_AFL = ['AFL1', 'AFL2', 'AFL3'];
+  function aflList(c) {
+    return Array.isArray(c.aflList) && c.aflList.length ? c.aflList : DEFAULT_AFL.slice();
+  }
+  function setAflList(c, names) {
+    const list = [];
+    (names || []).map(n => String(n || '').replace(/\s+/g, ' ').trim().slice(0, 24)).filter(Boolean).forEach(n => {
+      if (!list.some(x => nameKey(x) === nameKey(n))) list.push(n);
+    });
+    if (!list.length) return fail('Indiquez au moins un AFL.');
+    if (list.length > 8) return fail('8 AFL au maximum.');
+    c.aflList = list;
+    return { ok: true, list };
+  }
+  const AFL_DEGREES = [1, 2, 3, 4];
+  /** Évaluation d'un élève sur un AFL : { date, degree, note } ou null. */
+  function aflEval(c, studentId, afl) {
+    const e = c.aflEvals && c.aflEvals[studentId], v = e && e[afl];
+    if (!v) return null;
+    if (typeof v === 'string') return { date: v, degree: null, note: '' }; // ancien format (date seule)
+    return { date: v.date || null, degree: AFL_DEGREES.includes(v.degree) ? v.degree : null, note: v.note || '' };
+  }
+  function aflDate(c, studentId, afl) {
+    const v = aflEval(c, studentId, afl);
+    return v ? v.date : null;
+  }
+  /** Enregistre (ou met à jour) l'évaluation : degré 1-4, note de justification (200 caractères max). */
+  function setAflEvaluation(c, studentId, afl, data) {
+    if (!c.students.some(p => p.id === studentId)) return fail('Élève inconnu.');
+    if (!aflList(c).includes(afl)) return fail('AFL inconnu.');
+    data = data || {};
+    const degree = data.degree == null || data.degree === '' ? null : Number(data.degree);
+    if (degree != null && !AFL_DEGREES.includes(degree)) return fail('Degré entre 1 et 4.');
+    const prev = aflEval(c, studentId, afl);
+    c.aflEvals = c.aflEvals || {};
+    const e = c.aflEvals[studentId] = c.aflEvals[studentId] || {};
+    e[afl] = {
+      date: data.date || (prev && prev.date) || new Date().toISOString().slice(0, 10),
+      degree,
+      note: String(data.note == null ? (prev ? prev.note : '') : data.note).replace(/\s+/g, ' ').trim().slice(0, 200)
+    };
+    return { ok: true, evaluation: e[afl] };
+  }
+  function isAflEvaluated(c, studentId, afl) { return !!aflDate(c, studentId, afl); }
+  function setAflEvaluated(c, studentId, afl, evaluated, date) {
+    if (!c.students.some(p => p.id === studentId)) return fail('Élève inconnu.');
+    if (!aflList(c).includes(afl)) return fail('AFL inconnu.');
+    if (evaluated) return setAflEvaluation(c, studentId, afl, { date });
+    const e = c.aflEvals && c.aflEvals[studentId];
+    if (e) { delete e[afl]; if (!Object.keys(e).length) delete c.aflEvals[studentId]; }
+    return { ok: true };
+  }
+  /** Filtre une liste d'élèves (objets avec id) : mode 'all' | 'done' (évalués) | 'todo' (pas encore évalués). */
+  function filterByAfl(c, list, afl, mode) {
+    if (!afl || !mode || mode === 'all') return list;
+    return list.filter(p => isAflEvaluated(c, p.id, afl) === (mode === 'done'));
+  }
+  function aflSummary(c, afl) {
+    const done = c.students.filter(p => isAflEvaluated(c, p.id, afl)).length;
+    return { done, todo: c.students.length - done, total: c.students.length };
+  }
 
   /* ------------------------------------------------------------------ *
    * Élèves
@@ -1667,6 +1737,7 @@
     makeWorkGroups, buildWorkGroups, moveWorkGroup, workGroupStats,
     shortHash, shortId, ensureQrToken, sheetData, encodeSheet, decodeSheet, resultCode, parseResultCode, applyResultCode,
     groupMatches, poolSheetData, decodePoolSheet, poolResultCode, parsePoolResultCode, applyPoolResultCode, applyAnyCode,
-    emptyDB, migrate, validateDB, parseDB, exportClass, planImport, applyImport, unsavedSessions, markExported, addStudents, renameStudent, nameKey, createDemoClass, DEMO_NAMES
+    emptyDB, migrate, validateDB, parseDB, exportClass, planImport, applyImport, unsavedSessions, markExported, addStudents, renameStudent, nameKey, createDemoClass, DEMO_NAMES,
+    DEFAULT_AFL, AFL_DEGREES, aflList, setAflList, aflEval, aflDate, isAflEvaluated, setAflEvaluated, setAflEvaluation, filterByAfl, aflSummary
   };
 });
